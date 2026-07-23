@@ -347,6 +347,14 @@ prompt_step "System Settings — Battery" \
   "Energy Mode: On battery = Automatic, on power adapter = High Power. (No confirmed pmset/defaults equivalent for this macOS 14.5+ control.) Click Open for Battery settings." \
   "x-apple.systempreferences:com.apple.Battery-Settings.extension"
 
+prompt_step "System Settings — Accessibility (Vision > Motion)" \
+  "Reduce Motion = On. Auto-play animated images = Off. (Not scripted — com.apple.universalaccess is TCC-protected and fails without Terminal having Full Disk Access, which can't even be granted mid-script since it wouldn't apply until Terminal restarts.) Click Open for Accessibility settings, then go to Vision > Motion." \
+  "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+
+prompt_step "System Settings — Accessibility (Vision > Display)" \
+  "Reduce Transparency = On. Show window title icons = On. (Same com.apple.universalaccess issue as Motion above.) Click Open for Accessibility settings, then go to Vision > Display." \
+  "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+
 prompt_step "System Settings — Appearance" \
   "Liquid Glass = Tinted. Tint window background with wallpaper color = Off. (Both are new Tahoe controls with no confirmed defaults key.) Click Open for Appearance settings." \
   "x-apple.systempreferences:com.apple.Appearance-Settings.extension"

@@ -69,20 +69,17 @@ sudo pmset -c disksleep 0
 sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates -bool false
 
 # --- Accessibility: Vision > Motion ---
-defaults write com.apple.universalaccess reduceMotion -bool true
-# "Auto-play animated images" off. Moderate confidence on this exact key (couldn't
-# find a source confirming it directly, but it follows the same
-# com.apple.universalaccess naming pattern as reduceMotion/reduceTransparency) —
-# verify it actually took effect at System Settings > Accessibility > Motion.
-defaults write com.apple.universalaccess autoplayAnimatedImages -bool false
+# Reduce motion, auto-play animated images: NOT scripted. Both live under
+# com.apple.universalaccess, which is TCC-protected — `defaults write` against
+# it fails outright without Terminal having Full Disk Access, and that
+# permission doesn't apply retroactively to an already-running process, so
+# granting it mid-script wouldn't even help the run that's already in progress.
+# Not worth the hassle for four toggles total (this section + Display below) —
+# set by hand at System Settings > Accessibility > Motion.
 
 # --- Accessibility: Vision > Display ---
-defaults write com.apple.universalaccess reduceTransparency -bool true
-# Show window title icons. NOTE: this one needs Terminal to have Full Disk Access
-# (System Settings > Privacy & Security > Full Disk Access) or it silently does
-# nothing — TCC-protected, same category as other permission grants in this
-# script. Grant that first if this doesn't seem to take.
-defaults write com.apple.universalaccess showWindowTitlebarIcons -bool true
+# Reduce transparency, show window title icons: same com.apple.universalaccess
+# issue as above — set by hand at System Settings > Accessibility > Display.
 
 # --- Appearance ---
 # Dark mode:
