@@ -100,15 +100,16 @@ set_string() {
 # done in $PHASE_B_STATE_FILE on a previous run — see the comment above that
 # file's definition for why a marker instead of a real check.
 # ---------------------------------------------------------------------------
-prompt_step() {
+
+# show_step_dialog "Title" "Message" ["open target"] — shows the guided-step
+# dialog (Open/Done loop if a target is given, Done-only otherwise) and blocks
+# until "Done". Does NOT touch the state file — that's prompt_step's job. Split
+# out so contingent one-off dialogs (e.g. an install-failure fallback) can
+# reuse the exact dialog behavior without being recorded as a completed step.
+show_step_dialog() {
   local title="$1" message="$2" target="${3:-}"
   local esc_title="${title//\"/\\\"}"
   local esc_message="${message//\"/\\\"}"
-
-  if grep -qxF "$title" "$PHASE_B_STATE_FILE" 2>/dev/null; then
-    echo "  (already done: ${title})"
-    return
-  fi
 
   if [ -n "$target" ]; then
     while true; do
@@ -127,6 +128,17 @@ APPLESCRIPT
   else
     osascript -e "display dialog \"${esc_message}\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
   fi
+}
+
+prompt_step() {
+  local title="$1" message="$2" target="${3:-}"
+
+  if grep -qxF "$title" "$PHASE_B_STATE_FILE" 2>/dev/null; then
+    echo "  (already done: ${title})"
+    return
+  fi
+
+  show_step_dialog "$title" "$message" "$target"
 
   echo "$title" >> "$PHASE_B_STATE_FILE"
 }
@@ -176,7 +188,10 @@ APPLESCRIPT
     osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
     echo "$title" >> "$PHASE_B_STATE_FILE"
   else
-    prompt_step "${title} — Not Installed" \
+    # Use show_step_dialog, not prompt_step: this contingent failure notice
+    # must never be recorded as done, or a later retry that fails again would
+    # silently suppress it.
+    show_step_dialog "${title} — Not Installed" \
       "Couldn't install ${app_name} — you may not own it on this Apple ID, might not be signed in, or something else went wrong. Click Open to check the App Store page yourself." \
       "${store_url}"
   fi
@@ -256,12 +271,17 @@ check ".zprofile has brew shellenv" grep -q 'brew shellenv' "$HOME/.zprofile"
 
 # A5. Packages from Brewfile
 echo "Installing packages from Brewfile..."
-brew bundle --file="${DIR}/Brewfile"
+# Don't let one failed/interrupted formula or cask abort the rest of Phase A —
+# the check below reports the real state, and a re-run retries anything missing.
+brew bundle --file="${DIR}/Brewfile" || true
 check "All Brewfile packages installed" brew bundle check --file="${DIR}/Brewfile"
 
 # A6. macOS system defaults
 echo "Applying macOS defaults..."
-bash "${DIR}/macos-defaults.sh"
+# Runs as a subprocess under this script's set -e; guard so an unexpected
+# non-zero exit inside it can't abort the rest of Phase A. It prints its own
+# per-setting ✓/✗ so failures are still visible.
+bash "${DIR}/macos-defaults.sh" || true
 
 # A7. Brave — everything scriptable with zero clicks (policies, prefs, headless
 # profile init). Setting Brave as default browser and opening it for sign-in
@@ -333,30 +353,51 @@ if [ -d "/Applications/Brave Browser.app" ]; then
   # Beyond MRU cycling: toolbar/UI preferences, shields-by-default toggles,
   # download prompt, and vertical tabs — all pulled from this machine's own
   # Brave config on 2026-07-23.
+  #
+  # Decide whether to rewrite by comparing VALUES, not file bytes: Brave writes
+  # Preferences as compact single-line JSON while jq pretty-prints, so a byte
+  # comparison would always differ and needlessly rewrite + kill Brave on every
+  # run. `jq -e` exits 0 only if every target key already holds its value (a
+  # missing key compares as null != target, so it correctly counts as needing
+  # an update).
   if [ -f "$BRAVE_PREFS" ] && command -v jq &>/dev/null; then
-    tmp="$(mktemp)"
-    jq '.brave.mru_cycling_enabled = true
-      | .brave.enable_window_closing_confirm = false
-      | .brave.show_bookmarks_button = false
-      | .brave.show_side_panel_button = false
-      | .brave.location_bar_is_wide = false
-      | .brave.top_site_suggestions_enabled = false
-      | .brave.wayback_machine_enabled = true
-      | .brave.no_script_default = false
-      | .brave.fb_embed_default = false
-      | .brave.twitter_embed_default = false
-      | .brave.google_login_default = false
-      | .download.prompt_for_download = false
-      | .brave.tabs.vertical_tabs_enabled = true
-      | .brave.tabs.vertical_tabs_floating_enabled = true
-      | .brave.tabs.vertical_tabs_show_scrollbar = true' "$BRAVE_PREFS" > "$tmp"
-    if ! cmp -s "$BRAVE_PREFS" "$tmp"; then
+    if ! jq -e '
+        (.brave.mru_cycling_enabled == true) and
+        (.brave.enable_window_closing_confirm == false) and
+        (.brave.show_bookmarks_button == false) and
+        (.brave.show_side_panel_button == false) and
+        (.brave.location_bar_is_wide == false) and
+        (.brave.top_site_suggestions_enabled == false) and
+        (.brave.wayback_machine_enabled == true) and
+        (.brave.no_script_default == false) and
+        (.brave.fb_embed_default == false) and
+        (.brave.twitter_embed_default == false) and
+        (.brave.google_login_default == false) and
+        (.download.prompt_for_download == false) and
+        (.brave.tabs.vertical_tabs_enabled == true) and
+        (.brave.tabs.vertical_tabs_floating_enabled == true) and
+        (.brave.tabs.vertical_tabs_show_scrollbar == true)
+      ' "$BRAVE_PREFS" >/dev/null 2>&1; then
+      tmp="$(mktemp)"
+      jq '.brave.mru_cycling_enabled = true
+        | .brave.enable_window_closing_confirm = false
+        | .brave.show_bookmarks_button = false
+        | .brave.show_side_panel_button = false
+        | .brave.location_bar_is_wide = false
+        | .brave.top_site_suggestions_enabled = false
+        | .brave.wayback_machine_enabled = true
+        | .brave.no_script_default = false
+        | .brave.fb_embed_default = false
+        | .brave.twitter_embed_default = false
+        | .brave.google_login_default = false
+        | .download.prompt_for_download = false
+        | .brave.tabs.vertical_tabs_enabled = true
+        | .brave.tabs.vertical_tabs_floating_enabled = true
+        | .brave.tabs.vertical_tabs_show_scrollbar = true' "$BRAVE_PREFS" > "$tmp"
       killall "Brave Browser" 2>/dev/null || true
       sleep 1
       mv "$tmp" "$BRAVE_PREFS"
       echo "Brave preferences updated (tabs, toolbar, shields defaults, downloads)."
-    else
-      rm -f "$tmp"
     fi
 
     check "Ctrl-Tab MRU cycling enabled" test "$(jq -r '.brave.mru_cycling_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
