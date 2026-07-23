@@ -308,7 +308,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
       sudo /usr/libexec/PlistBuddy -c "Set :ExtensionInstallForcelist:0 ${ICLOUD_PASSWORDS_EXT_ID};https://clients2.google.com/service/update2/crx" "$MANAGED_PLIST"
     sudo killall cfprefsd 2>/dev/null || true
   fi
-  check "iCloud Passwords extension force-install policy set" \
+  check "iCloud Passwords extension installed" \
     bash -c "/usr/libexec/PlistBuddy -c 'Print :ExtensionInstallForcelist:0' '${MANAGED_PLIST}' 2>/dev/null | grep -q '${ICLOUD_PASSWORDS_EXT_ID}'"
 
   # Enable "Cycle through the most recently used tabs with Ctrl-Tab" by
@@ -330,18 +330,54 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     sleep 1
   fi
 
+  # Beyond MRU cycling: toolbar/UI preferences, shields-by-default toggles,
+  # download prompt, and vertical tabs — all pulled from this machine's own
+  # Brave config on 2026-07-23.
   if [ -f "$BRAVE_PREFS" ] && command -v jq &>/dev/null; then
-    if [ "$(jq -r '.brave.mru_cycling_enabled' "$BRAVE_PREFS" 2>/dev/null)" != "true" ]; then
+    tmp="$(mktemp)"
+    jq '.brave.mru_cycling_enabled = true
+      | .brave.enable_window_closing_confirm = false
+      | .brave.show_bookmarks_button = false
+      | .brave.show_side_panel_button = false
+      | .brave.location_bar_is_wide = false
+      | .brave.top_site_suggestions_enabled = false
+      | .brave.wayback_machine_enabled = true
+      | .brave.no_script_default = false
+      | .brave.fb_embed_default = false
+      | .brave.twitter_embed_default = false
+      | .brave.google_login_default = false
+      | .download.prompt_for_download = false
+      | .brave.tabs.vertical_tabs_enabled = true
+      | .brave.tabs.vertical_tabs_floating_enabled = true
+      | .brave.tabs.vertical_tabs_show_scrollbar = true' "$BRAVE_PREFS" > "$tmp"
+    if ! cmp -s "$BRAVE_PREFS" "$tmp"; then
       killall "Brave Browser" 2>/dev/null || true
       sleep 1
-      tmp="$(mktemp)"
-      jq '.brave.mru_cycling_enabled = true' "$BRAVE_PREFS" > "$tmp" && mv "$tmp" "$BRAVE_PREFS"
-      echo "Ctrl-Tab MRU cycling enabled."
+      mv "$tmp" "$BRAVE_PREFS"
+      echo "Brave preferences updated (tabs, toolbar, shields defaults, downloads)."
+    else
+      rm -f "$tmp"
     fi
+
     check "Ctrl-Tab MRU cycling enabled" test "$(jq -r '.brave.mru_cycling_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
+    check "Window-closing confirmation off" test "$(jq -r '.brave.enable_window_closing_confirm' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Bookmarks bar button hidden" test "$(jq -r '.brave.show_bookmarks_button' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Side panel button hidden" test "$(jq -r '.brave.show_side_panel_button' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Wide location bar off" test "$(jq -r '.brave.location_bar_is_wide' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "New Tab top site suggestions off" test "$(jq -r '.brave.top_site_suggestions_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Wayback Machine offer enabled" test "$(jq -r '.brave.wayback_machine_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
+    check "NoScript-by-default off" test "$(jq -r '.brave.no_script_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Facebook embeds-by-default off" test "$(jq -r '.brave.fb_embed_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Twitter embeds-by-default off" test "$(jq -r '.brave.twitter_embed_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Google login embeds-by-default off" test "$(jq -r '.brave.google_login_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Downloads don't prompt for save location" test "$(jq -r '.download.prompt_for_download' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Vertical tabs enabled" test "$(jq -r '.brave.tabs.vertical_tabs_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
+    check "Vertical tabs floating mode enabled" test "$(jq -r '.brave.tabs.vertical_tabs_floating_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
+    check "Vertical tabs scrollbar shown" test "$(jq -r '.brave.tabs.vertical_tabs_show_scrollbar' "$BRAVE_PREFS" 2>/dev/null)" = "true"
   else
-    echo "Could not initialize Brave's profile automatically — enable Ctrl-Tab MRU"
-    echo "manually at brave://settings/braveContent."
+    echo "Could not initialize Brave's profile automatically — enable these"
+    echo "preferences manually at brave://settings/braveContent and"
+    echo "brave://settings/appearance (vertical tabs)."
   fi
 fi
 
@@ -388,6 +424,196 @@ if [ -d "/Applications/Clipy.app" ]; then
   check "Clipy Clear History shortcut cleared" bash -c '! defaults read com.clipy-app.Clipy kCPYClearHistoryKeyCombo &>/dev/null'
 fi
 
+# A9. Scroll Reverser preferences — app-owned prefs, not TCC-protected, so
+# these are safe to set before the Accessibility/Input Monitoring permission
+# grant (Phase B) — they just won't do anything until that's granted.
+if [ -d "/Applications/Scroll Reverser.app" ]; then
+  echo "Configuring Scroll Reverser (automated preferences)..."
+  set_bool "Scroll Reverser enabled" com.pilotmoon.scroll-reverser InvertScrollingOn true
+  set_bool "Scroll Reverser: Reverse Trackpad off" com.pilotmoon.scroll-reverser ReverseTrackpad false
+fi
+
+# A10. VS Code settings and baseline extensions — settings.json copied from
+# this machine's config on 2026-07-23, with machine/project-specific entries
+# dropped (a Flutter SDK path, an iTerm reference — iTerm isn't in the
+# Brewfile — and a Copilot autocompletion setting, deliberately not carried
+# forward). Only written if no settings.json already exists, so a re-run
+# never clobbers changes made since. Extensions are curated to general editor
+# experience — stack-specific ones (Dart, Python, C++, Docker, etc.) are left
+# out; `code --install-extension` is idempotent, it no-ops if already there.
+if [ -d "/Applications/Visual Studio Code.app" ] && command -v code &>/dev/null; then
+  echo "Configuring VS Code (settings + baseline extensions)..."
+
+  VSCODE_SETTINGS="$HOME/Library/Application Support/Code/User/settings.json"
+  mkdir -p "$(dirname "$VSCODE_SETTINGS")"
+  if [ ! -f "$VSCODE_SETTINGS" ]; then
+    cat > "$VSCODE_SETTINGS" <<'EOF'
+{
+  "editor.acceptSuggestionOnEnter": "on",
+  "editor.tabCompletion": "onlySnippets",
+  "editor.formatOnType": true,
+  "editor.cursorBlinking": "phase",
+  "editor.cursorStyle": "line",
+  "tslint.rulesDirectory": "./node_modules/codelyzer",
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "**/.git": true,
+    "**/.hg": true,
+    "**/.svn": true,
+    "/var/**": true,
+    "app/**/*.js.map": true
+  },
+  "workbench.iconTheme": "vs-seti",
+  "editor.dragAndDrop": true,
+  "tslint.autoFixOnSave": true,
+  "explorer.confirmDragAndDrop": false,
+  "nativescript.analytics.enabled": false,
+  "explorer.confirmDelete": false,
+  "gitlens.advanced.messages": {
+    "suppressLineUncommittedWarning": true,
+    "suppressShowKeyBindingsNotice": true
+  },
+  "gitlens.keymap": "alternate",
+  "vsintellicode.modify.editor.suggestSelection": "automaticallyOverrodeDefaultValue",
+  "terminal.integrated.fontFamily": "Monaco",
+  "todohighlight.keywords": [
+    {
+      "text": "TODO:",
+      "color": "black"
+    }
+  ],
+  "debug.console.fontSize": 12,
+  "terminal.integrated.fontSize": 14,
+  "editor.suggest.shareSuggestSelections": true,
+  "workbench.settings.openDefaultKeybindings": true,
+  "editor.suggestSelection": "first",
+  "editor.insertSpaces": false,
+  "files.trimTrailingWhitespace": true,
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "html.format.wrapAttributes": "force-aligned",
+  "html.format.wrapLineLength": 255,
+  "azureFunctions.showProjectWarning": false,
+  "extensions.ignoreRecommendations": false,
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.rulers": [120],
+    "editor.selectionHighlight": false,
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.suggestSelection": "first",
+    "editor.tabCompletion": "onlySnippets",
+    "editor.wordBasedSuggestions": "off"
+  },
+  "editor.fontFamily": "Dank Mono, Menlo, Monaco, 'Courier New', monospace",
+  "dart.debugExternalLibraries": true,
+  "dart.debugSdkLibraries": true,
+  "window.titleBarStyle": "native",
+  "terminal.integrated.tabs.enabled": true,
+  "terminal.integrated.cursorStyle": "line",
+  "terminal.integrated.unicodeVersion": "6",
+  "terminal.integrated.defaultProfile.osx": "/bin/zsh",
+  "dart.warnWhenEditingFilesOutsideWorkspace": false,
+  "security.workspace.trust.untrustedFiles": "open",
+  "svg.preview.mode": "svg",
+  "redhat.telemetry.enabled": false,
+  "editor.minimap.enabled": false,
+  "debug.toolBarLocation": "docked",
+  "workbench.editor.wrapTabs": true,
+  "dart.showInspectorNotificationsForWidgetErrors": false,
+  "editor.fontSize": 14,
+  "editor.formatOnSave": true,
+  "dart.warnWhenEditingFilesInPubCache": false,
+  "workbench.startupEditor": "none",
+  "files.associations": {
+    "*.ts": "typescript",
+    "*.arb": "json",
+    "*.svg": "svg"
+  },
+  "security.workspace.trust.startupPrompt": "always",
+  "[scss]": {
+    "editor.defaultFormatter": "vscode.css-language-features"
+  },
+  "html.autoCreateQuotes": false,
+  "search.useGlobalIgnoreFiles": true,
+  "search.useParentIgnoreFiles": true,
+  "search.exclude": {
+    "/var/**": true
+  },
+  "editor.stickyScroll.enabled": true,
+  "dart.devToolsLogFile": "~/devtools.txt",
+  "explorer.autoRevealExclude": {
+    "/var/**": true
+  },
+  "typescript.workspaceSymbols.scope": "currentProject",
+  "git.openRepositoryInParentFolders": "never",
+  "editor.rulers": [],
+  "dart.lineLength": 120,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "diffEditor.ignoreTrimWhitespace": false,
+  "editor.tabSize": 2,
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "diffEditor.maxComputationTime": 0,
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "window.zoomLevel": -1,
+  "dart.debugExternalPackageLibraries": true,
+  "[html]": {
+    "editor.defaultFormatter": "vscode.html-language-features"
+  },
+  "[svg]": {
+    "editor.defaultFormatter": "jock.svg"
+  },
+  "xml.symbols.maxItemsComputed": 50000,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "C_Cpp.default.cppStandard": "c++23",
+  "window.commandCenter": false,
+  "workbench.layoutControl.enabled": false,
+  "prisma.showPrismaDataPlatformNotification": false,
+  "spellright.notificationClass": "warning",
+  "html.format.wrapAttributesIndentSize": 2,
+  "workbench.editor.enablePreview": false,
+  "editor.renderWhitespace": "all",
+  "terminal.integrated.mouseWheelScrollSensitivity": 3,
+  "terminal.integrated.gpuAcceleration": "off"
+}
+EOF
+  fi
+  check "VS Code settings.json present" test -f "$VSCODE_SETTINGS"
+
+  # Baseline extensions — general editor experience, not tied to any one
+  # project's stack.
+  VSCODE_EXTENSIONS=(
+    adiessl.vscode-backtix
+    ban.spellright
+    davidanson.vscode-markdownlint
+    davidmorais.dark-magic-themes
+    dbaeumer.vscode-eslint
+    eamodio.gitlens
+    esbenp.prettier-vscode
+    fractalbrew.backticks
+    wayou.vscode-todo-highlight
+    yzhang.markdown-all-in-one
+  )
+  for ext in "${VSCODE_EXTENSIONS[@]}"; do
+    code --install-extension "$ext" >/dev/null 2>&1 || true
+  done
+  for ext in "${VSCODE_EXTENSIONS[@]}"; do
+    check "VS Code extension: ${ext}" bash -c "code --list-extensions | grep -qi '^${ext}\$'"
+  done
+fi
+
 echo ""
 echo "Phase A complete: apps installed, all scriptable preferences applied."
 
@@ -428,7 +654,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
   fi
 
   prompt_step "Brave — iCloud Passwords Sign-In" \
-    "The iCloud Passwords extension was force-installed already. Open its icon in the toolbar and sign in with your Apple ID. Click Open to bring Brave forward." \
+    "The iCloud Passwords extension is installed. Open its icon in the toolbar and sign in with your Apple ID. Click Open to bring Brave forward." \
     "/Applications/Brave Browser.app"
 
   prompt_step "Brave — Kagi Search Engine" \
@@ -436,7 +662,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     "https://chromewebstore.google.com/detail/kagi-search-for-chrome/cpeeggjhicnjfkjkkegblnadobhikphd"
 
   prompt_step "Brave — Gmail Sign-In" \
-    "Sign into ty1470@gmail.com. Once you're signed into iCloud Passwords it can offer to autofill, but entering credentials/2FA is on you. Click Open to go to Gmail." \
+    "Sign into ty1470@gmail.com. iCloud Passwords can autofill the login now that you're signed into it. Click Open to go to Gmail." \
     "https://mail.google.com/"
 fi
 
@@ -454,7 +680,7 @@ if [ -d "/Applications/Scroll Reverser.app" ]; then
     "/Applications/Scroll Reverser.app"
 
   prompt_step "Scroll Reverser — Input Monitoring Permission" \
-    "Grant Scroll Reverser Input Monitoring permission, then launch it and set your preferred scroll-reversal options. Click Open for the Privacy & Security settings pane, then choose Input Monitoring from the list." \
+    "Grant Scroll Reverser Input Monitoring permission — its scroll-reversal options are already set. Click Open for the Privacy & Security settings pane, then choose Input Monitoring from the list." \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 fi
 
@@ -473,7 +699,7 @@ if [ -d "/Applications/Keyboard Maestro.app" ]; then
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
   prompt_step "Keyboard Maestro — Macro Sync" \
-    "In Keyboard Maestro's preferences, go to the Syncing tab, choose \"Start Syncing Macros,\" then \"Open Existing Synchronized Macros,\" and select: ~/Library/Mobile Documents/com~apple~CloudDocs/Google Drive/Keyboard Maestro Macros.kmsync. (Not scripted — destructive/versioned, no safe preference key.) Click Open to launch Keyboard Maestro." \
+    "In Keyboard Maestro's preferences, go to the Syncing tab, choose \"Start Syncing Macros,\" then \"Open Existing Synchronized Macros,\" and select: iCloud Drive/Google Drive/Keyboard Maestro Macros.kmsync. Click Open to launch Keyboard Maestro." \
     "/Applications/Keyboard Maestro.app"
 fi
 
