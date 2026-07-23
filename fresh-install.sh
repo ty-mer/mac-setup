@@ -7,18 +7,22 @@
 #               clicked more than once) and "Done" (advances). Grouped by app/
 #               pane so you never bounce between the same place twice.
 #
-# The two are interleaved on purpose, to overlap your manual time with the long
-# downloads instead of idling:
+# The two are interleaved on purpose, to overlap your manual time — and one
+# long download with another — instead of idling:
 #   1. Instant local tweaks (Dock, Tips).
 #   2. Kick off the Xcode Command Line Tools install — but don't wait.
 #   3. WHILE it downloads: apply macOS defaults and walk through the System
 #      Settings toggles (none of this needs the tools or Homebrew).
 #   4. Barrier — wait for the Command Line Tools to finish.
-#   5. Homebrew, the Brewfile, and each app's automated config.
-#   6. Per-app guided sign-ins and permission grants (needs the apps installed).
+#   5. Homebrew, then mas specifically (it's tiny) so the Logic Pro/Final Cut
+#      Pro background downloads can start right away — overlapping with the
+#      rest of the Brewfile's much larger casks instead of running after them.
+#   6. The rest of the Brewfile, and each app's automated config.
+#   7. Per-app guided sign-ins and permission grants (needs the apps
+#      installed). Collects the Logic Pro/Final Cut Pro results at the end.
 #
 # When adding steps later: automated ones with no download dependency can join
-# step 3; anything needing Homebrew-installed apps goes in step 5/6.
+# step 3; anything needing Homebrew-installed apps goes in step 6/7.
 #
 # Usage: ./fresh-install.sh
 
@@ -250,7 +254,7 @@ wait_for_masapp_installs() {
       # must never be recorded as done, or a later retry that fails again
       # would silently suppress it.
       show_step_dialog "${title} — Not Installed" \
-        "Opens ${app_name} in the App Store. Install it there — if it won't, check that it's on this Apple ID and that you're signed in." \
+        "Opens ${app_name} in the App Store."$'\n\nInstall it there — if it won\'t, check that it\'s on this Apple ID and that you\'re signed in.' \
         "${store_url}"
     fi
   done
@@ -338,51 +342,51 @@ echo "Next: a series of System Settings dialogs. Click Open on each to jump to"
 echo "the pane, make the changes, then Done to move on."
 
 prompt_step "System Settings — Battery" \
-  $'Opens Battery settings. Set Energy Mode:\n\n•  On Battery: Automatic\n•  On Power Adapter: High Power' \
+  $'Opens Battery settings.\n\nSet Energy Mode:\n•  On Battery: Automatic\n•  On Power Adapter: High Power' \
   "x-apple.systempreferences:com.apple.Battery-Settings.extension"
 
 prompt_step "System Settings — Accessibility (Display)" \
-  $'Opens Accessibility settings. Choose Display, then set:\n\n•  Reduce Transparency: On\n•  Show window title icons: On' \
+  $'Opens Accessibility settings.\n\nChoose Display, then set:\n•  Reduce Transparency: On\n•  Show window title icons: On' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Accessibility (Motion)" \
-  $'Opens Accessibility settings. Choose Motion, then set:\n\n•  Reduce Motion: On\n•  Auto-play animated images: Off' \
+  $'Opens Accessibility settings.\n\nChoose Motion, then set:\n•  Reduce Motion: On\n•  Auto-play animated images: Off' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Appearance" \
-  "Opens Appearance settings. Turn off Tint window background with wallpaper color." \
+  $'Opens Appearance settings.\n\nTurn off Tint window background with wallpaper color.' \
   "x-apple.systempreferences:com.apple.Appearance-Settings.extension"
 
 prompt_step "System Settings — Menu Bar" \
-  "Opens Control Center settings. Turn on Show menu bar background." \
+  $'Opens Control Center settings.\n\nTurn on Show menu bar background.' \
   "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension"
 
 prompt_step "System Settings — Desktop & Dock" \
-  "Opens Desktop & Dock settings. Turn off Drag windows to top of screen to enter Mission Control." \
+  $'Opens Desktop & Dock settings.\n\nScroll to bottom and turn off Drag windows to top of screen to enter Mission Control.' \
   "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
 
 prompt_step "System Settings — Spotlight" \
-  $'Opens Spotlight settings. Set:\n\n•  Show Related Content: Off\n•  Help Apple Improve Search: Off\n•  Results from Apps: only Calculator, Dictionary, System Settings\n•  Results from System: only Apps' \
+  $'Opens Spotlight settings.\n\nSet:\n•  Show Related Content: Off\n•  Help Apple Improve Search: Off\n•  Results from Apps: only Calculator, Dictionary, System Settings\n•  Results from System: only Apps' \
   "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
 
 prompt_step "System Settings — Wallpaper" \
-  $'Opens Wallpaper settings. Set:\n\n•  Dynamic Wallpaper: Macintosh, Dark\n•  Color: Dark Gray\n\nThen click "Clock Appearance…" and turn on the large clock for Screen Saver and Lock Screen.' \
+  $'Opens Wallpaper settings.\n\nSet:\n•  Dynamic Wallpaper: Macintosh, Dark\n•  Color: Dark Gray\n\nThen click "Clock Appearance…" and turn on the large clock for Screen Saver and Lock Screen.' \
   "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension"
 
 prompt_step "System Settings — Notifications" \
-  $'Opens Notifications settings. Set:\n\n•  Show notifications when locked: Off\n•  All apps except Messages: Off\n•  Messages: Desktop only, Alert Style Persistent, sound Off' \
+  $'Opens Notifications settings.\n\nSet:\n•  Show notifications when locked: Off\n•  All apps except Messages: Off\n•  Messages: Desktop only, Alert Style Persistent, sound Off' \
   "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
 
 prompt_step "System Settings — Lock Screen" \
-  "Opens Lock Screen settings. Turn off Show user name and photo." \
+  $'Opens Lock Screen settings.\n\nTurn off Show user name and photo.' \
   "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
 
 prompt_step "System Settings — Privacy & Security" \
-  "Opens Privacy & Security settings. Under Accessories, set Allow accessories to connect to Automatically when unlocked." \
+  $'Opens Privacy & Security settings.\n\nUnder Accessories (near the bottom), set Allow accessories to connect to Automatically when unlocked.' \
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
 prompt_step "System Settings — Game Center" \
-  "Opens Game Center settings. Sign out." \
+  $'Opens Game Center settings.\n\nSign out.' \
   "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
 
 prompt_step "System Settings — Keyboard" \
@@ -390,7 +394,7 @@ prompt_step "System Settings — Keyboard" \
   "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
 
 prompt_step "System Settings — Trackpad" \
-  "Opens Trackpad settings. Turn off Look up & data detectors." \
+  $'Opens Trackpad settings.\n\nTurn off Look up & data detectors.' \
   "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"
 
 # --- Barrier: Homebrew needs the Command Line Tools ---
@@ -439,6 +443,35 @@ if ! grep -q 'brew shellenv' "$HOME/.zprofile" 2>/dev/null; then
   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
 fi
 check ".zprofile has brew shellenv" grep -q 'brew shellenv' "$HOME/.zprofile"
+
+# Install mas specifically first (it's tiny) so the Logic Pro/Final Cut Pro
+# background downloads below can start before the Brewfile's much larger casks
+# even begin — the two overlap instead of running one after the other. mas is
+# still declared in the Brewfile too; brew bundle just sees it already
+# installed and skips it.
+if ! command -v mas &>/dev/null; then
+  echo "Installing mas (Mac App Store CLI)..."
+  brew install mas || true
+fi
+check "mas installed" command -v mas
+
+# --- App Store ---
+# Kicked off here (before the rest of the Brewfile installs) specifically so
+# these background downloads (see prompt_masapp_step) overlap with brew
+# bundle's much larger casks instead of running after them.
+# wait_for_masapp_installs collects the results once, after every Phase B
+# guided step.
+if command -v mas &>/dev/null; then
+  prompt_step "App Store — Sign In" \
+    $'Opens the App Store.\n\nSign in with your Apple ID if prompted.' \
+    "/System/Applications/App Store.app"
+
+  prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
+    "macappstore://apps.apple.com/app/id634148309" "6GB"
+
+  prompt_masapp_step "App Store — Final Cut Pro" "Final Cut Pro" "424389933" \
+    "macappstore://apps.apple.com/app/id424389933" "4GB"
+fi
 
 # A5. Packages from Brewfile
 echo "Installing packages from Brewfile..."
@@ -645,8 +678,11 @@ if [ -d "/Applications/Clipy.app" ]; then
 fi
 
 # A8. Scroll Reverser preferences — app-owned prefs, not TCC-protected, so
-# these are safe to set before the Accessibility/Input Monitoring permission
-# grant (Phase B) — they just won't do anything until that's granted.
+# this is safe to set before the Accessibility permission grant (Phase B) —
+# it just won't do anything until that's granted. The master "Enable" toggle
+# (InvertScrollingOn) isn't set here: it doesn't stick when written while the
+# app lacks Accessibility permission, so that one's a manual Phase B step
+# instead — see the Scroll Reverser group below.
 if [ -d "/Applications/Scroll Reverser.app" ]; then
   echo "Configuring Scroll Reverser (automated preferences)..."
   # Quit it first if it's running (e.g. a re-run where it's already a login
@@ -658,7 +694,6 @@ if [ -d "/Applications/Scroll Reverser.app" ]; then
     killall "Scroll Reverser" 2>/dev/null || true
     sleep 1
   fi
-  set_bool "Scroll Reverser enabled" com.pilotmoon.scroll-reverser InvertScrollingOn true
   set_bool "Scroll Reverser: Reverse Trackpad off" com.pilotmoon.scroll-reverser ReverseTrackpad false
   killall cfprefsd 2>/dev/null || true
 fi
@@ -855,32 +890,16 @@ fi
 # =============================================================================
 # App sign-ins & permissions — guided manual steps, one at a time, grouped by
 # app. Each is a dialog with Open (jump to the right place) and Done (advance).
-# These come last because they need the apps Homebrew just installed. The
-# System Settings walk-through already happened earlier, during the Command
-# Line Tools download.
+# These come last because they need the apps Homebrew just installed. (The
+# App Store group is the exception — it already ran back in Phase A, right
+# after mas installed, so its downloads overlap with the rest of the
+# Brewfile.) The System Settings walk-through happened earlier still, during
+# the Command Line Tools download.
 # =============================================================================
 echo ""
 echo "--- App sign-ins and permissions ---"
 echo "A dialog will appear for each step. Click Open to jump to the right place,"
 echo "then Done when you've finished that step, to move to the next one."
-
-# --- App Store ---
-# Placed first (not last) and its installs run in the background (see
-# prompt_masapp_step) — Logic Pro/Final Cut Pro are large downloads, so
-# starting them now lets them run alongside every dialog below instead of
-# blocking at the end. wait_for_masapp_installs collects the results after
-# everything else.
-if command -v mas &>/dev/null; then
-  prompt_step "App Store — Sign In" \
-    "Opens the App Store. Sign in with your Apple ID." \
-    "/System/Applications/App Store.app"
-
-  prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
-    "macappstore://apps.apple.com/app/id634148309" "6GB"
-
-  prompt_masapp_step "App Store — Final Cut Pro" "Final Cut Pro" "424389933" \
-    "macappstore://apps.apple.com/app/id424389933" "4GB"
-fi
 
 # --- Brave ---
 if [ -d "/Applications/Brave Browser.app" ]; then
@@ -905,70 +924,55 @@ if [ -d "/Applications/Brave Browser.app" ]; then
         "macOS is asking to confirm Brave as your default browser. Click \"Use Brave Browser\" in that dialog, then click Done here."
     else
       prompt_step "Brave — Default Browser (manual)" \
-        "Opens Desktop & Dock settings. Set Default web browser to Brave." \
+        $'Opens Desktop & Dock settings.\n\nSet Default web browser to Brave.' \
         "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
     fi
   fi
 
   prompt_step "Brave — iCloud Passwords" \
-    "Opens Brave. Click the iCloud Passwords extension in the toolbar and sign in with your Apple ID." \
+    $'Opens Brave.\n\nClick the iCloud Passwords extension in the toolbar and sign in with your Apple ID.' \
     "/Applications/Brave Browser.app"
 
   prompt_step "Brave — Kagi Search" \
     $'Opens the Kagi Search extension in the Chrome Web Store.\n\n1. Add it to Brave.\n2. Pin it using the puzzle-piece icon in the toolbar.' \
-    "https://chromewebstore.google.com/detail/kagi-search-for-chrome/cpeeggjhicnjfkjkkegblnadobhikphd"
+    "https://chromewebstore.google.com/detail/kagi-search/cdglnehniifkbagbbombnjghhcihifij"
 
   prompt_step "Brave — Kagi Sign-In" \
-    "Opens the Kagi sign-in page. Log in so the extension can use your account as the default search." \
+    $'Opens the Kagi sign-in page.\n\nLog in so the extension can use your account as the default search.' \
     "https://kagi.com/signin"
 
   prompt_step "Brave — Gmail" \
-    "Opens the Gmail sign-in page. Sign in as ty1470@gmail.com." \
+    $'Opens the Gmail sign-in page.\n\nSign in as ty1470@gmail.com.' \
     "https://accounts.google.com/AccountChooser?service=mail&continue=https://mail.google.com/"
 fi
 
 # --- Clipy ---
 if [ -d "/Applications/Clipy.app" ]; then
   prompt_step "Clipy — Accessibility" \
-    "Opens Clipy. Grant it Accessibility permission when it asks." \
+    $'Opens Clipy.\n\nGrant it Accessibility permission if it asks.' \
     "/Applications/Clipy.app"
 fi
 
 # --- Scroll Reverser ---
+# Input Monitoring isn't requested here — Scroll Reverser never appeared in
+# that list even after quitting and reopening it, so there's nothing to grant
+# there for now.
 if [ -d "/Applications/Scroll Reverser.app" ]; then
   prompt_step "Scroll Reverser — Accessibility" \
-    "Opens Scroll Reverser. Grant it Accessibility permission when it asks." \
+    $'Opens Scroll Reverser.\n\n1. Grant it Accessibility permission when it asks.\n2. Click Enable in its Settings — this is the one toggle that doesn\'t stick when set automatically.' \
     "/Applications/Scroll Reverser.app"
-
-  prompt_step "Scroll Reverser — Input Monitoring" \
-    $'Opens Privacy & Security settings.\n\n1. Choose Input Monitoring.\n2. Turn on Scroll Reverser.\n\nIf it\'s not in the list yet, quit and reopen Scroll Reverser, then check again.' \
-    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
-
-  # Scroll Reverser appears to auto-disable its own "enabled" toggle when it
-  # detects it's missing Accessibility/Input Monitoring permission — which
-  # silently undoes the A8 write from before you'd granted either. Re-apply
-  # now that both are granted, so it sticks.
-  if pgrep -x "Scroll Reverser" >/dev/null 2>&1; then
-    killall "Scroll Reverser" 2>/dev/null || true
-    sleep 1
-  fi
-  set_bool "Scroll Reverser enabled" com.pilotmoon.scroll-reverser InvertScrollingOn true
-  set_bool "Scroll Reverser: Reverse Trackpad off" com.pilotmoon.scroll-reverser ReverseTrackpad false
-  killall cfprefsd 2>/dev/null || true
 fi
 
 # --- Keyboard Maestro ---
+# Input Monitoring isn't requested here — Keyboard Maestro Engine never
+# appeared in that list, so there's nothing to grant there for now.
 if [ -d "/Applications/Keyboard Maestro.app" ]; then
   prompt_step "Keyboard Maestro — License" \
-    "Opens Keyboard Maestro. Activate your license, or start the trial." \
+    $'Opens Keyboard Maestro.\n\nActivate your license, or start the trial.' \
     "/Applications/Keyboard Maestro.app"
 
   prompt_step "Keyboard Maestro — Accessibility" \
     $'Opens Privacy & Security settings.\n\n1. Choose Accessibility.\n2. Turn on both Keyboard Maestro and Keyboard Maestro Engine — two separate entries.' \
-    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
-
-  prompt_step "Keyboard Maestro — Input Monitoring" \
-    $'Opens Privacy & Security settings.\n\n1. Choose Input Monitoring.\n2. Turn on Keyboard Maestro Engine.' \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
   prompt_step "Keyboard Maestro — Macro Sync" \
