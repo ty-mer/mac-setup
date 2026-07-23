@@ -286,7 +286,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     else
       prompt_step "Brave — Default Browser (manual)" \
         "Couldn't set Brave as default automatically (macOS hadn't registered it as an HTTP handler yet). Set it by hand via Brave's own Settings > \"Set as default browser,\" or System Settings > Desktop & Dock > Default web browser. Click Open for Desktop & Dock settings." \
-        "x-apple.systempreferences:com.apple.Dock-Settings.extension"
+        "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
     fi
   fi
 
@@ -377,7 +377,7 @@ prompt_step "System Settings — Menu Bar" \
 
 prompt_step "System Settings — Desktop & Dock" \
   "Drag windows to top of screen to enter Mission Control = Off. (Distinct from the window-tiling keys already scripted; no confirmed key found for this one specifically.) Click Open for Desktop & Dock settings." \
-  "x-apple.systempreferences:com.apple.Dock-Settings.extension"
+  "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
 
 prompt_step "System Settings — Spotlight" \
   "Show Related Content = Off. Help Apple Improve Search = Off. Results from Apps: only Calculator, Dictionary, System Settings on. Results from System: only Apps on. (Granular per-category keys not confidently confirmed for the current UI.) Click Open for Spotlight settings." \
@@ -393,7 +393,7 @@ prompt_step "System Settings — Notifications" \
 
 prompt_step "System Settings — Lock Screen" \
   "Show user name and photo = Off. (Distinct from the login window's SHOWFULLNAME setting; no confirmed key for this one.) Click Open for Lock Screen settings." \
-  "x-apple.systempreferences:com.apple.LockScreen-Settings.extension"
+  "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
 
 prompt_step "System Settings — Privacy & Security" \
   "Wired Accessories > Allow accessories to connect = Automatically allow when unlocked. (The only documented terminal path is MDM-only.) Click Open for Privacy & Security settings." \
@@ -401,7 +401,7 @@ prompt_step "System Settings — Privacy & Security" \
 
 prompt_step "System Settings — Game Center" \
   "Sign out of Game Center. (Apple ID/CloudKit session state, not a static preference.) Click Open for Game Center settings." \
-  "x-apple.systempreferences:com.apple.GameCenter-Settings.extension"
+  "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
 
 prompt_step "System Settings — Keyboard" \
   "Caps Lock = No Action, for each keyboard you use (built-in + any external — this is stored per physical keyboard, no single key to script). Click Open for Keyboard settings." \
