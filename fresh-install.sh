@@ -17,6 +17,18 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Phase B has no reliable OS-checkable state for any of its steps — most are
+# manual because there's no defaults key or TCC permission state isn't readable
+# without Full Disk Access, and the ones that looked checkable in principle
+# (`defaultbrowser`, `mas account`, `mas list`) turned out not to be either:
+# `defaultbrowser` doesn't mark the current default in its own output, `mas
+# account` doesn't exist in the installed mas version, and `mas list` depends
+# on Spotlight indexing that isn't populated yet on a fresh account. So instead
+# of checking reality, we remember which step titles you've already completed,
+# in $HOME so it survives across re-downloads of this script.
+PHASE_B_STATE_FILE="$HOME/.mac-setup-phase-b-done"
+touch "$PHASE_B_STATE_FILE"
+
 echo "=== Fresh install script ==="
 
 # ---------------------------------------------------------------------------
@@ -83,11 +95,20 @@ set_string() {
 # If no open target is given, the dialog just shows a single "Done" button —
 # for steps where the relevant window/dialog already opened itself as a side
 # effect of the previous command (e.g. macOS's own default-browser prompt).
+#
+# Skips itself entirely (no dialog) if this exact title was already marked
+# done in $PHASE_B_STATE_FILE on a previous run — see the comment above that
+# file's definition for why a marker instead of a real check.
 # ---------------------------------------------------------------------------
 prompt_step() {
   local title="$1" message="$2" target="${3:-}"
   local esc_title="${title//\"/\\\"}"
   local esc_message="${message//\"/\\\"}"
+
+  if grep -qxF "$title" "$PHASE_B_STATE_FILE" 2>/dev/null; then
+    echo "  (already done: ${title})"
+    return
+  fi
 
   if [ -n "$target" ]; then
     while true; do
@@ -106,6 +127,8 @@ APPLESCRIPT
   else
     osascript -e "display dialog \"${esc_message}\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
   fi
+
+  echo "$title" >> "$PHASE_B_STATE_FILE"
 }
 
 # ---------------------------------------------------------------------------
@@ -119,10 +142,22 @@ APPLESCRIPT
 # starts the full download immediately if you do. So this always asks first:
 # "Install" attempts `mas install` right then (and shows a follow-up Done-only
 # dialog reporting success or failure); "Skip" does nothing and moves on.
+#
+# Skips the dialog entirely if already marked done in $PHASE_B_STATE_FILE —
+# but only a genuine successful `mas install` marks it done. Clicking Skip, or
+# an install attempt that fails, leaves it unmarked so it's offered again next
+# run (unlike prompt_step, `mas list` can't be trusted to check real installed
+# state — see the comment on $PHASE_B_STATE_FILE's definition).
 # ---------------------------------------------------------------------------
 prompt_masapp_step() {
   local title="$1" app_name="$2" app_id="$3" store_url="$4" size_hint="$5"
   local esc_title="${title//\"/\\\"}"
+
+  if grep -qxF "$title" "$PHASE_B_STATE_FILE" 2>/dev/null; then
+    echo "  (already done: ${title})"
+    return
+  fi
+
   local ask_message="Install ${app_name} if it's purchased on this Apple ID? (~${size_hint} download if you own it — fails instantly if not. Make sure you're signed into the App Store first.)"
   local esc_ask="${ask_message//\"/\\\"}"
 
@@ -139,6 +174,7 @@ APPLESCRIPT
   echo "Attempting to install ${app_name} (mas id ${app_id})..."
   if mas install "${app_id}"; then
     osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
+    echo "$title" >> "$PHASE_B_STATE_FILE"
   else
     prompt_step "${title} — Not Installed" \
       "Couldn't install ${app_name} — you may not own it on this Apple ID, might not be signed in, or something else went wrong. Click Open to check the App Store page yourself." \
@@ -366,7 +402,16 @@ echo "then Done when you've finished that step, to move to the next one."
 # --- Brave ---
 if [ -d "/Applications/Brave Browser.app" ]; then
 
-  if command -v defaultbrowser &>/dev/null; then
+  # `defaultbrowser`'s own output doesn't reliably indicate the current
+  # default (no marker in its listing), so there's no real check possible here
+  # either — gate the whole block (including the `defaultbrowser brave` call
+  # itself, which can re-trigger macOS's native confirmation popup) behind the
+  # same done-marker used everywhere else in Phase B, checking both possible
+  # outcome titles since which one fires depends on the attempt below.
+  if grep -qxF "Brave — Default Browser" "$PHASE_B_STATE_FILE" 2>/dev/null || \
+     grep -qxF "Brave — Default Browser (manual)" "$PHASE_B_STATE_FILE" 2>/dev/null; then
+    echo "  (already done: Brave — Default Browser)"
+  elif command -v defaultbrowser &>/dev/null; then
     # Homebrew-cask-installed apps aren't always registered with Launch
     # Services as HTTP handlers right away — force a registration pass so
     # `defaultbrowser` can actually see Brave as a candidate.
@@ -387,7 +432,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     "/Applications/Brave Browser.app"
 
   prompt_step "Brave — Kagi Search Engine" \
-    "Install the Kagi Search extension from the Chrome Web Store, pin it, then log into Kagi. iCloud Passwords can autofill the login now that you're signed into it. (Not scripted: Brave's default-search policy only works with real MDM enrollment.) Click Open for the extension page." \
+    "Install the Kagi Search extension from the Chrome Web Store, pin it, then log into Kagi. iCloud Passwords can autofill the login now that you're signed into it. Click Open for the extension page." \
     "https://chromewebstore.google.com/detail/kagi-search-for-chrome/cpeeggjhicnjfkjkkegblnadobhikphd"
 
   prompt_step "Brave — Gmail Sign-In" \
@@ -405,8 +450,8 @@ fi
 # --- Scroll Reverser ---
 if [ -d "/Applications/Scroll Reverser.app" ]; then
   prompt_step "Scroll Reverser — Accessibility Permission" \
-    "Grant Scroll Reverser Accessibility permission. Click Open for the Accessibility settings pane." \
-    "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+    "Launch Scroll Reverser — it'll prompt you for Accessibility permission itself. Click Open to launch it, then grant the permission when it asks." \
+    "/Applications/Scroll Reverser.app"
 
   prompt_step "Scroll Reverser — Input Monitoring Permission" \
     "Grant Scroll Reverser Input Monitoring permission, then launch it and set your preferred scroll-reversal options. Click Open for the Privacy & Security settings pane, then choose Input Monitoring from the list." \
