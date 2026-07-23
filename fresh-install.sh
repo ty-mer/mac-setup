@@ -275,9 +275,19 @@ echo "then Done when you've finished that step, to move to the next one."
 if [ -d "/Applications/Brave Browser.app" ]; then
 
   if command -v defaultbrowser &>/dev/null; then
-    defaultbrowser brave
-    prompt_step "Brave — Default Browser" \
-      "macOS just showed a confirmation dialog asking to make Brave your default browser. Click \"Use Brave Browser\" on it, then click Done here."
+    # Homebrew-cask-installed apps aren't always registered with Launch
+    # Services as HTTP handlers right away — force a registration pass so
+    # `defaultbrowser` can actually see Brave as a candidate.
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/Brave Browser.app" 2>/dev/null || true
+
+    if defaultbrowser brave; then
+      prompt_step "Brave — Default Browser" \
+        "macOS just showed a confirmation dialog asking to make Brave your default browser. Click \"Use Brave Browser\" on it, then click Done here."
+    else
+      prompt_step "Brave — Default Browser (manual)" \
+        "Couldn't set Brave as default automatically (macOS hadn't registered it as an HTTP handler yet). Set it by hand via Brave's own Settings > \"Set as default browser,\" or System Settings > Desktop & Dock > Default web browser. Click Open for Desktop & Dock settings." \
+        "x-apple.systempreferences:com.apple.Dock-Settings.extension"
+    fi
   fi
 
   prompt_step "Brave — Kagi Search Engine" \
