@@ -20,6 +20,54 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "=== Fresh install script ==="
 
 # ---------------------------------------------------------------------------
+# check "description" <command...> — runs the command, prints ✓/✗ based on its
+# exit status. Typical usage is `check "desc" test "$(defaults read ...)" = "expected"`.
+# ---------------------------------------------------------------------------
+check() {
+  local desc="$1"; shift
+  if "$@" >/dev/null 2>&1; then
+    echo "  ✓ ${desc}"
+  else
+    echo "  ✗ ${desc}"
+  fi
+}
+
+# set_bool/set_int/set_string "description" domain key value — skip the write
+# if the current value already matches (avoids unnecessary re-writes, and for
+# sudo-gated domains, unnecessary repeat password prompts on a re-run),
+# otherwise write then verify.
+set_bool() {
+  local desc="$1" domain="$2" key="$3" value="$4"
+  local want; [ "$value" = "true" ] && want=1 || want=0
+  local have; have="$(defaults read "$domain" "$key" 2>/dev/null || true)"
+  if [ "$have" != "$want" ]; then
+    defaults write "$domain" "$key" -bool "$value"
+    have="$(defaults read "$domain" "$key" 2>/dev/null || true)"
+  fi
+  check "$desc" test "$have" = "$want"
+}
+
+set_int() {
+  local desc="$1" domain="$2" key="$3" value="$4"
+  local have; have="$(defaults read "$domain" "$key" 2>/dev/null || true)"
+  if [ "$have" != "$value" ]; then
+    defaults write "$domain" "$key" -int "$value"
+    have="$(defaults read "$domain" "$key" 2>/dev/null || true)"
+  fi
+  check "$desc" test "$have" = "$value"
+}
+
+set_string() {
+  local desc="$1" domain="$2" key="$3" value="$4"
+  local have; have="$(defaults read "$domain" "$key" 2>/dev/null || true)"
+  if [ "$have" != "$value" ]; then
+    defaults write "$domain" "$key" -string "$value"
+    have="$(defaults read "$domain" "$key" 2>/dev/null || true)"
+  fi
+  check "$desc" test "$have" = "$value"
+}
+
+# ---------------------------------------------------------------------------
 # prompt_step — guided-step dialog helper for Phase B.
 #
 #   prompt_step "Title" "Message" ["open target"]
@@ -106,11 +154,26 @@ echo "--- Phase A: automated setup ---"
 
 # A1. Clear Dock and hide desktop widgets
 echo "Clearing Dock and hiding desktop widgets..."
-defaults write com.apple.dock persistent-apps -array
-defaults write com.apple.dock persistent-others -array
-defaults write com.apple.WindowManager StandardHideWidgets -bool true
-defaults write com.apple.WindowManager StageManagerHideWidgets -bool true
-killall Dock 2>/dev/null || true
+NEED_DOCK_KILL=false
+if [ "$(defaults read com.apple.dock persistent-apps 2>/dev/null | tr -d '[:space:]')" != "()" ]; then
+  defaults write com.apple.dock persistent-apps -array
+  NEED_DOCK_KILL=true
+fi
+if [ "$(defaults read com.apple.dock persistent-others 2>/dev/null | tr -d '[:space:]')" != "()" ]; then
+  defaults write com.apple.dock persistent-others -array
+  NEED_DOCK_KILL=true
+fi
+# Widget changes need the Dock restart too — pre-check them before set_bool so
+# a change here also triggers the kill below.
+if [ "$(defaults read com.apple.WindowManager StandardHideWidgets 2>/dev/null)" != "1" ] || \
+   [ "$(defaults read com.apple.WindowManager StageManagerHideWidgets 2>/dev/null)" != "1" ]; then
+  NEED_DOCK_KILL=true
+fi
+set_bool "Desktop widgets hidden" com.apple.WindowManager StandardHideWidgets true
+set_bool "Stage Manager widgets hidden" com.apple.WindowManager StageManagerHideWidgets true
+[ "$NEED_DOCK_KILL" = true ] && killall Dock 2>/dev/null || true
+check "Dock persistent apps cleared" test "$(defaults read com.apple.dock persistent-apps 2>/dev/null | tr -d '[:space:]')" = "()"
+check "Dock persistent others cleared" test "$(defaults read com.apple.dock persistent-others 2>/dev/null | tr -d '[:space:]')" = "()"
 # Note: StandardHideWidgets/StageManagerHideWidgets HIDE widgets, they don't delete
 # them individually — there's no reliable terminal command for that (the widget
 # config plist is TCC-protected). If you want specific widgets gone rather than
@@ -120,6 +183,7 @@ killall Dock 2>/dev/null || true
 # never gets a chance to notify you about apps/features while you're mid-setup.
 launchctl bootout "gui/$(id -u)/com.apple.tipsd" 2>/dev/null || true
 launchctl disable "gui/$(id -u)/com.apple.tipsd" 2>/dev/null || true
+check "Tips daemon not running" bash -c '! launchctl list 2>/dev/null | grep -q com.apple.tipsd'
 # To reverse: launchctl enable "gui/$(id -u)/com.apple.tipsd"
 
 # A3. Xcode Command Line Tools (needed for Homebrew, git, etc.)
@@ -134,6 +198,7 @@ if ! xcode-select -p &>/dev/null; then
   done
   echo "Xcode Command Line Tools installed."
 fi
+check "Xcode Command Line Tools installed" xcode-select -p
 
 # A4. Homebrew
 if ! command -v brew &>/dev/null; then
@@ -141,6 +206,7 @@ if ! command -v brew &>/dev/null; then
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
+check "Homebrew installed" command -v brew
 
 # The installer prints shellenv instructions but doesn't act on them — add it to
 # .zprofile ourselves so brew (and anything it installs) is on PATH in new
@@ -150,10 +216,12 @@ fi
 if ! grep -q 'brew shellenv' "$HOME/.zprofile" 2>/dev/null; then
   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
 fi
+check ".zprofile has brew shellenv" grep -q 'brew shellenv' "$HOME/.zprofile"
 
 # A5. Packages from Brewfile
 echo "Installing packages from Brewfile..."
 brew bundle --file="${DIR}/Brewfile"
+check "All Brewfile packages installed" brew bundle check --file="${DIR}/Brewfile"
 
 # A6. macOS system defaults
 echo "Applying macOS defaults..."
@@ -167,23 +235,23 @@ if [ -d "/Applications/Brave Browser.app" ]; then
 
   # Disable autoplay globally. Real Chromium/Brave managed policy
   # (AutoplayAllowed) — applies even before Brave's first launch.
-  defaults write com.brave.Browser AutoplayAllowed -bool false
+  set_bool "Brave autoplay disabled" com.brave.Browser AutoplayAllowed false
 
   # Telemetry: disable P3A analytics, the daily stats ping, and Web Discovery.
-  defaults write com.brave.Browser BraveP3AEnabled -string "Disabled"
-  defaults write com.brave.Browser BraveStatsPingEnabled -bool false
-  defaults write com.brave.Browser BraveWebDiscoveryEnabled -bool false
+  set_string "Brave P3A analytics disabled" com.brave.Browser BraveP3AEnabled "Disabled"
+  set_bool "Brave stats ping disabled" com.brave.Browser BraveStatsPingEnabled false
+  set_bool "Brave Web Discovery disabled" com.brave.Browser BraveWebDiscoveryEnabled false
 
   # Optional features: disable Rewards, Wallet, VPN promo, and AI Chat (Leo).
-  defaults write com.brave.Browser BraveRewardsDisabled -bool true
-  defaults write com.brave.Browser BraveWalletDisabled -bool true
-  defaults write com.brave.Browser BraveVPNDisabled -bool true
-  defaults write com.brave.Browser BraveAIChatEnabled -bool false
+  set_bool "Brave Rewards disabled" com.brave.Browser BraveRewardsDisabled true
+  set_bool "Brave Wallet disabled" com.brave.Browser BraveWalletDisabled true
+  set_bool "Brave VPN promo disabled" com.brave.Browser BraveVPNDisabled true
+  set_bool "Brave AI Chat (Leo) disabled" com.brave.Browser BraveAIChatEnabled false
 
   # Password manager: disable Brave's own entirely — no reads from it, no
   # writes to it. On a brand new profile there's nothing saved yet, so this
   # fully blocks both saving new passwords and autofill from Brave's store.
-  defaults write com.brave.Browser PasswordManagerEnabled -bool false
+  set_bool "Brave's own password manager disabled" com.brave.Browser PasswordManagerEnabled false
 
   # iCloud Passwords extension: force-install it via mandatory managed policy
   # so it's ready without a manual "Add extension" click. Signing into it is
@@ -191,14 +259,21 @@ if [ -d "/Applications/Brave Browser.app" ]; then
   ICLOUD_PASSWORDS_EXT_ID="pejdijmoenmkgeppbflobdenhhabjlaj"
   MANAGED_DIR="/Library/Managed Preferences"
   MANAGED_PLIST="${MANAGED_DIR}/com.brave.Browser.plist"
-  echo "Installing iCloud Passwords extension (admin password required)..."
-  sudo mkdir -p "$MANAGED_DIR"
-  sudo chown root:wheel "$MANAGED_DIR"
-  sudo chmod 755 "$MANAGED_DIR"
-  sudo /usr/libexec/PlistBuddy -c "Add :ExtensionInstallForcelist array" "$MANAGED_PLIST" 2>/dev/null || true
-  sudo /usr/libexec/PlistBuddy -c "Add :ExtensionInstallForcelist:0 string ${ICLOUD_PASSWORDS_EXT_ID};https://clients2.google.com/service/update2/crx" "$MANAGED_PLIST" 2>/dev/null || \
-    sudo /usr/libexec/PlistBuddy -c "Set :ExtensionInstallForcelist:0 ${ICLOUD_PASSWORDS_EXT_ID};https://clients2.google.com/service/update2/crx" "$MANAGED_PLIST"
-  sudo killall cfprefsd 2>/dev/null || true
+  # The plist is root-owned but world-readable (644), so reading it needs no
+  # sudo — a re-run where the policy is already set skips the whole sudo chain
+  # below without ever prompting for a password.
+  if ! /usr/libexec/PlistBuddy -c "Print :ExtensionInstallForcelist:0" "$MANAGED_PLIST" 2>/dev/null | grep -q "$ICLOUD_PASSWORDS_EXT_ID"; then
+    echo "Installing iCloud Passwords extension (admin password required)..."
+    sudo mkdir -p "$MANAGED_DIR"
+    sudo chown root:wheel "$MANAGED_DIR"
+    sudo chmod 755 "$MANAGED_DIR"
+    sudo /usr/libexec/PlistBuddy -c "Add :ExtensionInstallForcelist array" "$MANAGED_PLIST" 2>/dev/null || true
+    sudo /usr/libexec/PlistBuddy -c "Add :ExtensionInstallForcelist:0 string ${ICLOUD_PASSWORDS_EXT_ID};https://clients2.google.com/service/update2/crx" "$MANAGED_PLIST" 2>/dev/null || \
+      sudo /usr/libexec/PlistBuddy -c "Set :ExtensionInstallForcelist:0 ${ICLOUD_PASSWORDS_EXT_ID};https://clients2.google.com/service/update2/crx" "$MANAGED_PLIST"
+    sudo killall cfprefsd 2>/dev/null || true
+  fi
+  check "iCloud Passwords extension force-install policy set" \
+    bash -c "/usr/libexec/PlistBuddy -c 'Print :ExtensionInstallForcelist:0' '${MANAGED_PLIST}' 2>/dev/null | grep -q '${ICLOUD_PASSWORDS_EXT_ID}'"
 
   # Enable "Cycle through the most recently used tabs with Ctrl-Tab" by
   # patching Brave's profile JSON directly — needs a profile to exist first,
@@ -220,11 +295,14 @@ if [ -d "/Applications/Brave Browser.app" ]; then
   fi
 
   if [ -f "$BRAVE_PREFS" ] && command -v jq &>/dev/null; then
-    killall "Brave Browser" 2>/dev/null || true
-    sleep 1
-    tmp="$(mktemp)"
-    jq '.brave.mru_cycling_enabled = true' "$BRAVE_PREFS" > "$tmp" && mv "$tmp" "$BRAVE_PREFS"
-    echo "Ctrl-Tab MRU cycling enabled."
+    if [ "$(jq -r '.brave.mru_cycling_enabled' "$BRAVE_PREFS" 2>/dev/null)" != "true" ]; then
+      killall "Brave Browser" 2>/dev/null || true
+      sleep 1
+      tmp="$(mktemp)"
+      jq '.brave.mru_cycling_enabled = true' "$BRAVE_PREFS" > "$tmp" && mv "$tmp" "$BRAVE_PREFS"
+      echo "Ctrl-Tab MRU cycling enabled."
+    fi
+    check "Ctrl-Tab MRU cycling enabled" test "$(jq -r '.brave.mru_cycling_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
   else
     echo "Could not initialize Brave's profile automatically — enable Ctrl-Tab MRU"
     echo "manually at brave://settings/braveContent."
@@ -235,21 +313,32 @@ fi
 # (`defaults read com.clipy-app.Clipy`). All plain prefs writes, no clicking.
 if [ -d "/Applications/Clipy.app" ]; then
   echo "Configuring Clipy (automated preferences)..."
-  defaults write com.clipy-app.Clipy addNumericKeyEquivalents -bool true
-  defaults write com.clipy-app.Clipy kCPYBetaObserveScreenshot -bool true
-  defaults write com.clipy-app.Clipy kCPYPrefMaxHistorySizeKey -int 90
-  defaults write com.clipy-app.Clipy kCPYPrefNumberOfItemsPlaceInlineKey -int 10
-  defaults write com.clipy-app.Clipy loginItem -bool true
+  set_bool "Clipy numeric key equivalents enabled" com.clipy-app.Clipy addNumericKeyEquivalents true
+  set_bool "Clipy beta screenshot capture enabled" com.clipy-app.Clipy kCPYBetaObserveScreenshot true
+  set_int "Clipy history cap = 90" com.clipy-app.Clipy kCPYPrefMaxHistorySizeKey 90
+  set_int "Clipy inline menu items = 10" com.clipy-app.Clipy kCPYPrefNumberOfItemsPlaceInlineKey 10
+  set_bool "Clipy launch at login enabled" com.clipy-app.Clipy loginItem true
 
   CLIPY_PLIST="$HOME/Library/Preferences/com.clipy-app.Clipy.plist"
-  killall cfprefsd 2>/dev/null || true
   PB="/usr/libexec/PlistBuddy"
-  "$PB" -c "Add :kCPYPrefStoreTypesKey dict" "$CLIPY_PLIST" 2>/dev/null || true
+  NEED_STORE_TYPES_WRITE=false
   for storeType in Filenames PDF RTF RTFD String TIFF URL; do
-    "$PB" -c "Add :kCPYPrefStoreTypesKey:${storeType} bool true" "$CLIPY_PLIST" 2>/dev/null || \
-      "$PB" -c "Set :kCPYPrefStoreTypesKey:${storeType} true" "$CLIPY_PLIST"
+    if [ "$("$PB" -c "Print :kCPYPrefStoreTypesKey:${storeType}" "$CLIPY_PLIST" 2>/dev/null)" != "true" ]; then
+      NEED_STORE_TYPES_WRITE=true
+    fi
   done
-  killall cfprefsd 2>/dev/null || true
+  if [ "$NEED_STORE_TYPES_WRITE" = true ]; then
+    killall cfprefsd 2>/dev/null || true
+    "$PB" -c "Add :kCPYPrefStoreTypesKey dict" "$CLIPY_PLIST" 2>/dev/null || true
+    for storeType in Filenames PDF RTF RTFD String TIFF URL; do
+      "$PB" -c "Add :kCPYPrefStoreTypesKey:${storeType} bool true" "$CLIPY_PLIST" 2>/dev/null || \
+        "$PB" -c "Set :kCPYPrefStoreTypesKey:${storeType} true" "$CLIPY_PLIST"
+    done
+    killall cfprefsd 2>/dev/null || true
+  fi
+  for storeType in Filenames PDF RTF RTFD String TIFF URL; do
+    check "Clipy stores ${storeType}" test "$("$PB" -c "Print :kCPYPrefStoreTypesKey:${storeType}" "$CLIPY_PLIST" 2>/dev/null)" = "true"
+  done
 
   # Keyboard shortcuts: leave Main as whatever Clipy ships with, clear History,
   # Snippet, and Clear History. Confirmed against Clipy's own source
@@ -258,6 +347,9 @@ if [ -d "/Applications/Clipy.app" ]; then
   defaults delete com.clipy-app.Clipy kCPYHotKeyHistoryKeyCombo 2>/dev/null || true
   defaults delete com.clipy-app.Clipy kCPYHotKeySnippetKeyCombo 2>/dev/null || true
   defaults delete com.clipy-app.Clipy kCPYClearHistoryKeyCombo 2>/dev/null || true
+  check "Clipy History shortcut cleared" bash -c '! defaults read com.clipy-app.Clipy kCPYHotKeyHistoryKeyCombo &>/dev/null'
+  check "Clipy Snippet shortcut cleared" bash -c '! defaults read com.clipy-app.Clipy kCPYHotKeySnippetKeyCombo &>/dev/null'
+  check "Clipy Clear History shortcut cleared" bash -c '! defaults read com.clipy-app.Clipy kCPYClearHistoryKeyCombo &>/dev/null'
 fi
 
 echo ""
@@ -290,13 +382,13 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     fi
   fi
 
-  prompt_step "Brave — Kagi Search Engine" \
-    "Install the Kagi Search extension from the Chrome Web Store, pin it, then log into Kagi. (Not scripted: Brave's default-search policy only works with real MDM enrollment.) Click Open for the extension page." \
-    "https://chromewebstore.google.com/detail/kagi-search-for-chrome/cpeeggjhicnjfkjkkegblnadobhikphd"
-
   prompt_step "Brave — iCloud Passwords Sign-In" \
     "The iCloud Passwords extension was force-installed already. Open its icon in the toolbar and sign in with your Apple ID. Click Open to bring Brave forward." \
     "/Applications/Brave Browser.app"
+
+  prompt_step "Brave — Kagi Search Engine" \
+    "Install the Kagi Search extension from the Chrome Web Store, pin it, then log into Kagi. iCloud Passwords can autofill the login now that you're signed into it. (Not scripted: Brave's default-search policy only works with real MDM enrollment.) Click Open for the extension page." \
+    "https://chromewebstore.google.com/detail/kagi-search-for-chrome/cpeeggjhicnjfkjkkegblnadobhikphd"
 
   prompt_step "Brave — Gmail Sign-In" \
     "Sign into ty1470@gmail.com. Once you're signed into iCloud Passwords it can offer to autofill, but entering credentials/2FA is on you. Click Open to go to Gmail." \
@@ -306,8 +398,8 @@ fi
 # --- Clipy ---
 if [ -d "/Applications/Clipy.app" ]; then
   prompt_step "Clipy — Accessibility Permission" \
-    "Grant Clipy Accessibility permission, then launch Clipy once (it needs a first launch to register itself as a login item and pick up its hotkeys). Click Open for the Accessibility settings pane." \
-    "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+    "Launch Clipy — it needs a first launch to register itself as a login item and pick up its hotkeys, and it'll prompt you for Accessibility permission itself. Click Open to launch it, then grant the permission when it asks." \
+    "/Applications/Clipy.app"
 fi
 
 # --- Scroll Reverser ---
@@ -413,5 +505,5 @@ prompt_step "System Settings — Trackpad" \
 
 # ---------------------------------------------------------------------------
 echo ""
-echo "Phase B complete. See SETUP-LOG.md for anything outside this script's scope"
-echo "(App Store apps, licensed software, dotfiles, dev environment, etc.)."
+echo "Phase B complete. Anything outside this script's scope (licensed software,"
+echo "dotfiles, dev environment, etc.) is still on you."
