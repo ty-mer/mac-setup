@@ -160,15 +160,19 @@ prompt_step() {
 #
 # `mas` has no way to check whether an app is purchased without attempting
 # the actual install — it fails fast (no download) if you don't own it, but
-# starts the full download immediately if you do. So this always asks first:
-# "Install" attempts `mas install` right then (and shows a follow-up Done-only
-# dialog reporting success or failure); "Skip" does nothing and moves on.
+# starts the full download immediately if you do. So this always asks first,
+# with three choices:
+#   "Install"  — attempts `mas install` right then (and shows a follow-up
+#                Done-only dialog reporting success or failure).
+#   "Not Now"  — does nothing this run; the step is offered again next run.
+#   "Never"    — records the step as done so it's never offered again, for an
+#                app you don't own or don't want.
 #
-# Skips the dialog entirely if already marked done in $PHASE_B_STATE_FILE —
-# but only a genuine successful `mas install` marks it done. Clicking Skip, or
-# an install attempt that fails, leaves it unmarked so it's offered again next
-# run (unlike prompt_step, `mas list` can't be trusted to check real installed
-# state — see the comment on $PHASE_B_STATE_FILE's definition).
+# Skips the dialog entirely if already marked done in $PHASE_B_STATE_FILE.
+# Only a genuine successful `mas install` OR an explicit "Never" marks it done;
+# "Not Now" and a failed install both leave it unmarked (unlike prompt_step,
+# `mas list` can't be trusted to check real installed state — see the comment
+# on $PHASE_B_STATE_FILE's definition).
 # ---------------------------------------------------------------------------
 prompt_masapp_step() {
   local title="$1" app_name="$2" app_id="$3" store_url="$4" size_hint="$5"
@@ -179,18 +183,25 @@ prompt_masapp_step() {
     return
   fi
 
-  local ask_message="Install ${app_name} if it's purchased on this Apple ID? (~${size_hint} download if you own it — fails instantly if not. Make sure you're signed into the App Store first.)"
+  local ask_message="Install ${app_name} if it's purchased on this Apple ID? (~${size_hint} download if you own it — fails instantly if not. Make sure you're signed into the App Store first.) \"Not Now\" asks again next run; \"Never\" stops asking."
   local esc_ask="${ask_message//\"/\\\"}"
 
   local button
   button="$(osascript <<APPLESCRIPT
-display dialog "${esc_ask}" with title "${esc_title}" buttons {"Skip", "Install"} default button "Skip"
+display dialog "${esc_ask}" with title "${esc_title}" buttons {"Never", "Not Now", "Install"} default button "Not Now"
 button returned of result
 APPLESCRIPT
 )"
-  if [ "$button" != "Install" ]; then
-    return
-  fi
+  case "$button" in
+    Install) ;;  # fall through to the install attempt below
+    Never)
+      echo "$title" >> "$PHASE_B_STATE_FILE"
+      return
+      ;;
+    *)  # "Not Now" — leave unmarked so it's offered again next run
+      return
+      ;;
+  esac
 
   # Bring Terminal forward so the download progress (and any auth prompt) is
   # visible — a prior step's "Open" may have left it behind another window.
@@ -717,7 +728,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
         "macOS just showed a confirmation dialog asking to make Brave your default browser. Click \"Use Brave Browser\" on it, then click Done here."
     else
       prompt_step "Brave — Default Browser (manual)" \
-        "Couldn't set Brave as default automatically (macOS hadn't registered it as an HTTP handler yet). Set it by hand via Brave's own Settings > \"Set as default browser,\" or System Settings > Desktop & Dock > Default web browser. Click Open for Desktop & Dock settings." \
+        "Couldn't set Brave as default automatically. Set it by hand: in Brave's own Settings under \"Set as default browser,\" or in System Settings > Desktop & Dock > Default web browser. Click Open for Desktop & Dock settings." \
         "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
     fi
   fi
@@ -756,11 +767,11 @@ fi
 # --- Keyboard Maestro ---
 if [ -d "/Applications/Keyboard Maestro.app" ]; then
   prompt_step "Keyboard Maestro — License Activation" \
-    "Launch Keyboard Maestro and activate your license (or start the trial). Click Open to launch it." \
+    "Launch Keyboard Maestro and activate your license, or start the trial. Click Open to launch it." \
     "/Applications/Keyboard Maestro.app"
 
   prompt_step "Keyboard Maestro — Accessibility Permission" \
-    "Grant Accessibility permission to both Keyboard Maestro and Keyboard Maestro Engine (two separate entries in the list). Click Open for the Privacy & Security settings pane, then choose Accessibility from the list." \
+    "Grant Accessibility permission to both Keyboard Maestro and Keyboard Maestro Engine — two separate entries in the list. Click Open for the Privacy & Security settings pane, then choose Accessibility from the list." \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
   prompt_step "Keyboard Maestro — Input Monitoring Permission" \
@@ -788,59 +799,59 @@ fi
 # --- System Settings (everything with no scriptable equivalent, grouped by pane) ---
 
 prompt_step "System Settings — Battery" \
-  "Energy Mode: On battery = Automatic, on power adapter = High Power. (No confirmed pmset/defaults equivalent for this macOS 14.5+ control.) Click Open for Battery settings." \
+  $'Click Open for Battery settings, then set Energy Mode:\n\n•  On Battery — Automatic\n•  On Power Adapter — High Power' \
   "x-apple.systempreferences:com.apple.Battery-Settings.extension"
 
-prompt_step "System Settings — Accessibility (Vision > Motion)" \
-  "Reduce Motion = On. Auto-play animated images = Off. (Not scripted — com.apple.universalaccess is TCC-protected and fails without Terminal having Full Disk Access, which can't even be granted mid-script since it wouldn't apply until Terminal restarts.) Click Open for Accessibility settings, then go to Vision > Motion." \
+prompt_step "System Settings — Accessibility (Display)" \
+  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Transparency — On\n•  Show window title icons — On' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
-prompt_step "System Settings — Accessibility (Vision > Display)" \
-  "Reduce Transparency = On. Show window title icons = On. (Same com.apple.universalaccess issue as Motion above.) Click Open for Accessibility settings, then go to Vision > Display." \
+prompt_step "System Settings — Accessibility (Motion)" \
+  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Motion — On\n•  Auto-play animated images — Off' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Appearance" \
-  "Liquid Glass = Tinted. Tint window background with wallpaper color = Off. (Both are new Tahoe controls with no confirmed defaults key.) Click Open for Appearance settings." \
+  "Click Open for Appearance settings, then turn off Tint window background with wallpaper color." \
   "x-apple.systempreferences:com.apple.Appearance-Settings.extension"
 
 prompt_step "System Settings — Menu Bar" \
-  "Show menu bar background = On. (No confirmed defaults key.) Click Open for Menu Bar / Control Center settings." \
+  "Click Open for Control Center settings, then set Show menu bar background — On." \
   "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension"
 
 prompt_step "System Settings — Desktop & Dock" \
-  "Drag windows to top of screen to enter Mission Control = Off. (Distinct from the window-tiling keys already scripted; no confirmed key found for this one specifically.) Click Open for Desktop & Dock settings." \
+  "Click Open for Desktop & Dock settings, then turn off: Drag windows to top of screen to enter Mission Control." \
   "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
 
 prompt_step "System Settings — Spotlight" \
-  "Show Related Content = Off. Help Apple Improve Search = Off. Results from Apps: only Calculator, Dictionary, System Settings on. Results from System: only Apps on. (Granular per-category keys not confidently confirmed for the current UI.) Click Open for Spotlight settings." \
+  $'Click Open for Spotlight settings, then set:\n\n•  Show Related Content — Off\n•  Help Apple Improve Search — Off\n•  Results from Apps — only Calculator, Dictionary, System Settings on\n•  Results from System — only Apps on' \
   "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
 
 prompt_step "System Settings — Wallpaper" \
-  "Dynamic Wallpapers > Macintosh, set to Dark. Color = Dark Gray. Clock Appearance: show large clock On Screen Saver and Lock Screen. Click Open for Wallpaper settings." \
+  $'Click Open for Wallpaper settings, then set:\n\n•  Dynamic Wallpaper — Macintosh, set to Dark\n•  Color — Dark Gray\n•  Clock — show large clock on Screen Saver and Lock Screen' \
   "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension"
 
 prompt_step "System Settings — Notifications" \
-  "Show notifications when screen is locked = Off. Application Notifications: only Messages on (Desktop only, everything else off within Messages), Alert Style = Persistent, play sound = Off, everything else off. (Lives in ncprefs.plist as an opaque per-app blob — not safely scriptable.) Click Open for Notifications settings." \
+  $'Click Open for Notifications settings, then set:\n\n•  Show notifications when locked — Off\n•  Turn off every app except Messages\n•  In Messages — Desktop only, Alert Style Persistent, play sound Off, everything else off' \
   "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
 
 prompt_step "System Settings — Lock Screen" \
-  "Show user name and photo = Off. (Distinct from the login window's SHOWFULLNAME setting; no confirmed key for this one.) Click Open for Lock Screen settings." \
+  "Click Open for Lock Screen settings, then set Show user name and photo — Off." \
   "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
 
 prompt_step "System Settings — Privacy & Security" \
-  "Wired Accessories > Allow accessories to connect = Automatically allow when unlocked. (The only documented terminal path is MDM-only.) Click Open for Privacy & Security settings." \
+  "Click Open for Privacy & Security settings, then under Wired Accessories set Allow accessories to connect — Automatically when unlocked." \
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
 prompt_step "System Settings — Game Center" \
-  "Sign out of Game Center. (Apple ID/CloudKit session state, not a static preference.) Click Open for Game Center settings." \
+  "Click Open for Game Center settings, then sign out." \
   "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
 
 prompt_step "System Settings — Keyboard" \
-  "Caps Lock = No Action, for each keyboard you use (built-in + any external — this is stored per physical keyboard, no single key to script). Click Open for Keyboard settings." \
+  $'Click Open for Keyboard settings, then click "Keyboard Shortcuts…" and choose Modifier Keys — the last item in the list, after Function Keys. Set the Caps Lock Key to No Action.\n\nUse the keyboard selector at the top to repeat this for each keyboard you use — the built-in one and any external keyboards.' \
   "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
 
 prompt_step "System Settings — Trackpad" \
-  "Look up & data detectors = Off. (Flagged even in the reference source as poorly understood — not confident enough to script.) Click Open for Trackpad settings." \
+  "Click Open for Trackpad settings, then turn off Look up & data detectors." \
   "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"
 
 # ---------------------------------------------------------------------------
