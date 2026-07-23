@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/ty-mer/stupid/main/merle_spaced/assets/mac-setup"
+REPO_RAW="https://raw.githubusercontent.com/ty-mer/mac-setup/main"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
