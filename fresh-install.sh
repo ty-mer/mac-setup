@@ -191,7 +191,7 @@ prompt_masapp_step() {
     return
   fi
 
-  local ask_message="Install ${app_name} if it's purchased on this Apple ID? (~${size_hint} download if you own it — fails instantly if not. Make sure you're signed into the App Store first.) \"Not Now\" asks again next run; \"Never\" stops asking."
+  local ask_message="Install ${app_name}? Downloads ~${size_hint} if it's on your Apple ID, or fails right away if not. Sign into the App Store first."$'\n\n•  Install — download it now\n•  Not Now — ask again next run\n•  Never — stop asking'
   local esc_ask="${ask_message//\"/\\\"}"
 
   local button
@@ -223,7 +223,7 @@ APPLESCRIPT
     # must never be recorded as done, or a later retry that fails again would
     # silently suppress it.
     show_step_dialog "${title} — Not Installed" \
-      "Couldn't install ${app_name} — you may not own it on this Apple ID, might not be signed in, or something else went wrong. Click Open to check the App Store page yourself." \
+      "Opens ${app_name} in the App Store. Install it there — if it won't, check that it's on this Apple ID and that you're signed in." \
       "${store_url}"
   fi
 }
@@ -310,59 +310,59 @@ echo "Next: a series of System Settings dialogs. Click Open on each to jump to"
 echo "the pane, make the changes, then Done to move on."
 
 prompt_step "System Settings — Battery" \
-  $'Click Open for Battery settings, then set Energy Mode:\n\n•  On Battery — Automatic\n•  On Power Adapter — High Power' \
+  $'Opens Battery settings. Set Energy Mode:\n\n•  On Battery: Automatic\n•  On Power Adapter: High Power' \
   "x-apple.systempreferences:com.apple.Battery-Settings.extension"
 
 prompt_step "System Settings — Accessibility (Display)" \
-  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Transparency — On\n•  Show window title icons — On' \
+  $'Opens Accessibility settings. Set:\n\n•  Reduce Transparency: On\n•  Show window title icons: On' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Accessibility (Motion)" \
-  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Motion — On\n•  Auto-play animated images — Off' \
+  $'Opens Accessibility settings. Set:\n\n•  Reduce Motion: On\n•  Auto-play animated images: Off' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Appearance" \
-  "Click Open for Appearance settings, then turn off Tint window background with wallpaper color." \
+  "Opens Appearance settings. Turn off Tint window background with wallpaper color." \
   "x-apple.systempreferences:com.apple.Appearance-Settings.extension"
 
 prompt_step "System Settings — Menu Bar" \
-  "Click Open for Control Center settings, then set Show menu bar background — On." \
+  "Opens Control Center settings. Turn on Show menu bar background." \
   "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension"
 
 prompt_step "System Settings — Desktop & Dock" \
-  "Click Open for Desktop & Dock settings, then turn off: Drag windows to top of screen to enter Mission Control." \
+  "Opens Desktop & Dock settings. Turn off Drag windows to top of screen to enter Mission Control." \
   "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
 
 prompt_step "System Settings — Spotlight" \
-  $'Click Open for Spotlight settings, then set:\n\n•  Show Related Content — Off\n•  Help Apple Improve Search — Off\n•  Results from Apps — only Calculator, Dictionary, System Settings on\n•  Results from System — only Apps on' \
+  $'Opens Spotlight settings. Set:\n\n•  Show Related Content: Off\n•  Help Apple Improve Search: Off\n•  Results from Apps: only Calculator, Dictionary, System Settings\n•  Results from System: only Apps' \
   "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
 
 prompt_step "System Settings — Wallpaper" \
-  $'Click Open for Wallpaper settings, then set:\n\n•  Dynamic Wallpaper — Macintosh, set to Dark\n•  Color — Dark Gray\n•  Clock — show large clock on Screen Saver and Lock Screen' \
+  $'Opens Wallpaper settings. Set:\n\n•  Dynamic Wallpaper: Macintosh, Dark\n•  Color: Dark Gray\n•  Clock: show large clock on Screen Saver and Lock Screen' \
   "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension"
 
 prompt_step "System Settings — Notifications" \
-  $'Click Open for Notifications settings, then set:\n\n•  Show notifications when locked — Off\n•  Turn off every app except Messages\n•  In Messages — Desktop only, Alert Style Persistent, play sound Off, everything else off' \
+  $'Opens Notifications settings. Set:\n\n•  Show notifications when locked: Off\n•  All apps except Messages: Off\n•  Messages: Desktop only, Alert Style Persistent, sound Off' \
   "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
 
 prompt_step "System Settings — Lock Screen" \
-  "Click Open for Lock Screen settings, then set Show user name and photo — Off." \
+  "Opens Lock Screen settings. Turn off Show user name and photo." \
   "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
 
 prompt_step "System Settings — Privacy & Security" \
-  "Click Open for Privacy & Security settings, then under Wired Accessories set Allow accessories to connect — Automatically when unlocked." \
+  "Opens Privacy & Security settings. Under Wired Accessories, set Allow accessories to connect to Automatically when unlocked." \
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
 prompt_step "System Settings — Game Center" \
-  "Click Open for Game Center settings, then sign out." \
+  "Opens Game Center settings. Sign out." \
   "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
 
 prompt_step "System Settings — Keyboard" \
-  $'Click Open for Keyboard settings, then click "Keyboard Shortcuts…" and choose Modifier Keys — the last item in the list, after Function Keys. Set the Caps Lock Key to No Action.\n\nUse the keyboard selector at the top to repeat this for each keyboard you use — the built-in one and any external keyboards.' \
+  $'Opens Keyboard settings.\n\n1. Click "Keyboard Shortcuts…".\n2. Choose Modifier Keys — last in the list, after Function Keys.\n3. Set Caps Lock Key to No Action.\n4. Repeat for each keyboard using the selector at the top.' \
   "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
 
 prompt_step "System Settings — Trackpad" \
-  "Click Open for Trackpad settings, then turn off Look up & data detectors." \
+  "Opens Trackpad settings. Turn off Look up & data detectors." \
   "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"
 
 # --- Barrier: Homebrew needs the Command Line Tools ---
@@ -486,6 +486,18 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     sleep 1
   fi
 
+  # Suppress the first-run onboarding so opening Brave in Phase B goes straight
+  # to a normal window. Two parts: Chromium skips its first-run experience (the
+  # welcome tab, import prompt, default-browser infobar) when a "First Run"
+  # sentinel file exists in the user-data dir — our --no-first-run headless init
+  # creates the profile but not this sentinel — and Brave's own welcome page is
+  # skipped via has_seen_brave_welcome_page in the prefs block below.
+  BRAVE_USER_DATA="$HOME/Library/Application Support/BraveSoftware/Brave-Browser"
+  if [ -d "$BRAVE_USER_DATA" ]; then
+    touch "$BRAVE_USER_DATA/First Run" 2>/dev/null || true
+  fi
+  check "Brave first-run sentinel present" test -f "$BRAVE_USER_DATA/First Run"
+
   # Beyond MRU cycling: toolbar/UI preferences, shields-by-default toggles,
   # download prompt, and vertical tabs — all pulled from this machine's own
   # Brave config on 2026-07-23.
@@ -509,6 +521,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
         (.brave.fb_embed_default == false) and
         (.brave.twitter_embed_default == false) and
         (.brave.google_login_default == false) and
+        (.brave.has_seen_brave_welcome_page == true) and
         (.download.prompt_for_download == false) and
         (.brave.tabs.vertical_tabs_enabled == true) and
         (.brave.tabs.vertical_tabs_floating_enabled == true) and
@@ -526,6 +539,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
         | .brave.fb_embed_default = false
         | .brave.twitter_embed_default = false
         | .brave.google_login_default = false
+        | .brave.has_seen_brave_welcome_page = true
         | .download.prompt_for_download = false
         | .brave.tabs.vertical_tabs_enabled = true
         | .brave.tabs.vertical_tabs_floating_enabled = true
@@ -547,6 +561,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     check "Facebook embeds-by-default off" test "$(jq -r '.brave.fb_embed_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
     check "Twitter embeds-by-default off" test "$(jq -r '.brave.twitter_embed_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
     check "Google login embeds-by-default off" test "$(jq -r '.brave.google_login_default' "$BRAVE_PREFS" 2>/dev/null)" = "false"
+    check "Brave welcome page skipped" test "$(jq -r '.brave.has_seen_brave_welcome_page' "$BRAVE_PREFS" 2>/dev/null)" = "true"
     check "Downloads don't prompt for save location" test "$(jq -r '.download.prompt_for_download' "$BRAVE_PREFS" 2>/dev/null)" = "false"
     check "Vertical tabs enabled" test "$(jq -r '.brave.tabs.vertical_tabs_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
     check "Vertical tabs floating mode enabled" test "$(jq -r '.brave.tabs.vertical_tabs_floating_enabled' "$BRAVE_PREFS" 2>/dev/null)" = "true"
@@ -833,68 +848,72 @@ if [ -d "/Applications/Brave Browser.app" ]; then
 
     if defaultbrowser brave; then
       prompt_step "Brave — Default Browser" \
-        "macOS just showed a confirmation dialog asking to make Brave your default browser. Click \"Use Brave Browser\" on it, then click Done here."
+        "macOS is asking to confirm Brave as your default browser. Click \"Use Brave Browser\" in that dialog, then click Done here."
     else
       prompt_step "Brave — Default Browser (manual)" \
-        "Couldn't set Brave as default automatically. Set it by hand: in Brave's own Settings under \"Set as default browser,\" or in System Settings > Desktop & Dock > Default web browser. Click Open for Desktop & Dock settings." \
+        "Opens Desktop & Dock settings. Set Default web browser to Brave." \
         "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
     fi
   fi
 
-  prompt_step "Brave — iCloud Passwords Sign-In" \
-    "The iCloud Passwords extension is installed. Open its icon in the toolbar and sign in with your Apple ID. Click Open to bring Brave forward." \
+  prompt_step "Brave — iCloud Passwords" \
+    "Opens Brave. Click the iCloud Passwords extension in the toolbar and sign in with your Apple ID." \
     "/Applications/Brave Browser.app"
 
-  prompt_step "Brave — Kagi Search Engine" \
-    "Install the Kagi Search extension from the Chrome Web Store, pin it, then log into Kagi. iCloud Passwords can autofill the login now that you're signed into it. Click Open for the extension page." \
+  prompt_step "Brave — Kagi Search" \
+    $'Opens the Kagi Search extension in the Chrome Web Store.\n\n1. Add it to Brave.\n2. Pin it using the puzzle-piece icon in the toolbar.' \
     "https://chromewebstore.google.com/detail/kagi-search-for-chrome/cpeeggjhicnjfkjkkegblnadobhikphd"
 
-  prompt_step "Brave — Gmail Sign-In" \
-    "Sign into ty1470@gmail.com. iCloud Passwords can autofill the login now that you're signed into it. Click Open to go to Gmail." \
-    "https://mail.google.com/"
+  prompt_step "Brave — Kagi Sign-In" \
+    "Opens the Kagi sign-in page. Log in so the extension can use your account as the default search." \
+    "https://kagi.com/signin"
+
+  prompt_step "Brave — Gmail" \
+    "Opens the Gmail sign-in page. Sign in as ty1470@gmail.com." \
+    "https://accounts.google.com/AccountChooser?service=mail&continue=https://mail.google.com/"
 fi
 
 # --- Clipy ---
 if [ -d "/Applications/Clipy.app" ]; then
-  prompt_step "Clipy — Accessibility Permission" \
-    "Launch Clipy — it needs a first launch to register itself as a login item and pick up its hotkeys, and it'll prompt you for Accessibility permission itself. Click Open to launch it, then grant the permission when it asks." \
+  prompt_step "Clipy — Accessibility" \
+    "Opens Clipy. Grant it Accessibility permission when it asks." \
     "/Applications/Clipy.app"
 fi
 
 # --- Scroll Reverser ---
 if [ -d "/Applications/Scroll Reverser.app" ]; then
-  prompt_step "Scroll Reverser — Accessibility Permission" \
-    "Launch Scroll Reverser — it'll prompt you for Accessibility permission itself. Click Open to launch it, then grant the permission when it asks." \
+  prompt_step "Scroll Reverser — Accessibility" \
+    "Opens Scroll Reverser. Grant it Accessibility permission when it asks." \
     "/Applications/Scroll Reverser.app"
 
-  prompt_step "Scroll Reverser — Input Monitoring Permission" \
-    "Grant Scroll Reverser Input Monitoring permission — its scroll-reversal options are already set. Click Open for the Privacy & Security settings pane, then choose Input Monitoring from the list." \
+  prompt_step "Scroll Reverser — Input Monitoring" \
+    $'Opens Privacy & Security settings.\n\n1. Choose Input Monitoring.\n2. Turn on Scroll Reverser.' \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 fi
 
 # --- Keyboard Maestro ---
 if [ -d "/Applications/Keyboard Maestro.app" ]; then
-  prompt_step "Keyboard Maestro — License Activation" \
-    "Launch Keyboard Maestro and activate your license, or start the trial. Click Open to launch it." \
+  prompt_step "Keyboard Maestro — License" \
+    "Opens Keyboard Maestro. Activate your license, or start the trial." \
     "/Applications/Keyboard Maestro.app"
 
-  prompt_step "Keyboard Maestro — Accessibility Permission" \
-    "Grant Accessibility permission to both Keyboard Maestro and Keyboard Maestro Engine — two separate entries in the list. Click Open for the Privacy & Security settings pane, then choose Accessibility from the list." \
+  prompt_step "Keyboard Maestro — Accessibility" \
+    $'Opens Privacy & Security settings.\n\n1. Choose Accessibility.\n2. Turn on both Keyboard Maestro and Keyboard Maestro Engine — two separate entries.' \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
-  prompt_step "Keyboard Maestro — Input Monitoring Permission" \
-    "Grant Keyboard Maestro Engine Input Monitoring permission. Click Open for the Privacy & Security settings pane, then choose Input Monitoring from the list." \
+  prompt_step "Keyboard Maestro — Input Monitoring" \
+    $'Opens Privacy & Security settings.\n\n1. Choose Input Monitoring.\n2. Turn on Keyboard Maestro Engine.' \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
   prompt_step "Keyboard Maestro — Macro Sync" \
-    "In Keyboard Maestro's preferences, go to the Syncing tab, choose \"Start Syncing Macros,\" then \"Open Existing Synchronized Macros,\" and select: iCloud Drive/Google Drive/Keyboard Maestro Macros.kmsync. Click Open to launch Keyboard Maestro." \
+    $'Opens Keyboard Maestro.\n\n1. Open Preferences and go to the Syncing tab.\n2. Click Start Syncing Macros, then Open Existing Synchronized Macros.\n3. Select the file: iCloud Drive/Google Drive/Keyboard Maestro Macros.kmsync.' \
     "/Applications/Keyboard Maestro.app"
 fi
 
 # --- App Store ---
 if command -v mas &>/dev/null; then
   prompt_step "App Store — Sign In" \
-    "Sign into the App Store with your Apple ID — needed before either install below will work. Click Open to launch the App Store." \
+    "Opens the App Store. Sign in with your Apple ID." \
     "macappstore://"
 
   prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
