@@ -1,0 +1,116 @@
+Mac setup — build log
+Machine: M4 MacBook Pro, macOS Tahoe
+Times below are MDT (2026-07-22).
+
+--------------------------------------------------------------------------
+
+1:19 PM — Clean install of Tahoe on the M4 MacBook Pro, new account, no backup
+restore. Started keeping track of everything from here.
+
+--------------------------------------------------------------------------
+
+1:26 PM — Added Dock-clear and widget-hide to fresh-install.sh.
+
+--------------------------------------------------------------------------
+
+1:31–1:37 PM — Added Brave to the Brewfile, plus the default-browser switch,
+autoplay-disable policy, and Ctrl-Tab MRU setting to fresh-install.sh. Made the
+MRU step force a headless first launch to create Brave's profile before
+patching it, so it's fully automatic instead of needing a prior manual launch.
+
+--------------------------------------------------------------------------
+
+1:39 PM — Identified what Brave's first-run wizard configures and scripted the
+equivalents: policies to disable P3A/stats-ping/Web Discovery telemetry, and to
+disable Rewards, Wallet, VPN, and AI Chat. Left setting Kagi as
+the default search engine as a manual step — macOS ignores that policy unless
+the machine is MDM-enrolled, and Kagi needs a login anyway.
+
+--------------------------------------------------------------------------
+
+1:48 PM — Disabled Brave's built-in password manager entirely, and
+force-installed the iCloud Passwords extension via a mandatory macOS policy
+(the one step that needs sudo, since it writes to /Library/Managed Preferences
+instead of a user-level plist). Had the script finish by opening
+mail.google.com in Brave to sign into Gmail by hand, with the extension there
+to autofill from iCloud Keychain once it's signed in too.
+
+--------------------------------------------------------------------------
+
+1:52 PM — Added a Finder default view to macos-defaults.sh: List view, sorted by
+Date Added descending. Only affects folders with no per-folder view settings of
+their own, which on a fresh account is everything.
+
+--------------------------------------------------------------------------
+
+2:04 PM — Added Clipy to the Brewfile. `brew bundle` covers the install; noted
+that it'll ask for Accessibility permission on first launch.
+
+--------------------------------------------------------------------------
+
+2:12–2:13 PM — Replicated Clipy's current preferences (pulled via `defaults read
+com.clipy-app.Clipy` on this machine) — numeric key equivalents, beta
+screenshot capture, 90-item history cap, 10 inline menu items, launch at login,
+and which clipboard types get stored. Skipped the stuff that's just
+machine/screen bookkeeping the app regenerates itself (status item position,
+Sparkle's update-window frame, last-check timestamp).
+
+--------------------------------------------------------------------------
+
+2:18 PM — Sorted out Clipy's keyboard shortcuts: left Main alone (never written,
+stays whatever Clipy ships with), and explicitly cleared History, Snippet, and
+Clear History via `defaults delete`. Checked Clipy's actual source on GitHub to
+confirm "cleared" means the key is simply absent rather than an empty value —
+that's also where the exact key name for Clear History came from, since it
+wasn't set on this machine to begin with and so wasn't guessable from the
+`defaults read` output.
+
+--------------------------------------------------------------------------
+
+2:22–2:27 PM — Considered installing Keyboard Maestro early to help automate
+later steps. Decided against reordering — KM's own Accessibility permission
+grant is manual no matter where it's installed, and most of what's left manual
+(Kagi/Gmail/iCloud sign-ins) is manual by choice, not a tooling gap. Added it
+in normal install order in the Brewfile instead, kept in mind for later steps
+where GUI automation is genuinely the only option.
+
+--------------------------------------------------------------------------
+
+2:35 PM — Added five more casks to the Brewfile: Obsidian, VS Code, Claude
+Desktop, IINA, and Scroll Reverser. Checked each cask name against
+formulae.brew.sh rather than assuming. Scroll Reverser needs Accessibility and
+Input Monitoring permission; the rest are plain installs.
+
+--------------------------------------------------------------------------
+
+2:40 PM — Looked into scripting Keyboard Maestro's macro sync (target file lives
+in iCloud Drive, under a folder named "Google Drive"). No preference key exists
+for this per KM's own docs — enabling sync is a destructive, versioned
+operation done only through File > Start Syncing Macros in the app itself, so
+left it manual rather than risk corrupting the macro library.
+
+--------------------------------------------------------------------------
+
+2:43 PM — Added a step to disable Tips before any app installs happen. Stops and
+disables the com.apple.tipsd LaunchAgent outright rather than trying to block
+its notifications after the fact, since that route normally needs an MDM
+profile (the notifications plist is an opaque binary blob, same issue as the
+widget plist). Reversible with `launchctl enable`.
+
+--------------------------------------------------------------------------
+
+3:25 PM — Went through a big batch of System Settings — Battery, General,
+Accessibility, Appearance, Menu Bar, Desktop & Dock (Mission Control, keyboard
+shortcuts, hot corners), Spotlight, Wallpaper, Notifications, Sound, Lock
+Screen, Privacy & Security, Game Center, Keyboard, and Trackpad — and turned as
+much as could be confirmed into macos-defaults.sh. Checked sources against
+macos-defaults.com and targeted searches per setting. About 15 things had no
+terminal equivalent trusted enough to script, so those stayed manual; a
+handful of the scripted ones are moderate rather than fully-verified
+confidence — noted inline in the script's own comments.
+
+--------------------------------------------------------------------------
+
+7:17 PM — Took a break and split fresh-install.sh, Brewfile, and macos-defaults.sh out into their own
+repo so the one-click launcher on the site can fetch them straight from GitHub
+at runtime instead of bundling stale copies.
