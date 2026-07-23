@@ -79,6 +79,15 @@ set_string() {
   check "$desc" test "$have" = "$value"
 }
 
+# focus_terminal — bring Terminal back to the front. Used before Terminal-side
+# output/prompts (e.g. a mas install's download progress) that a preceding GUI
+# step may have pushed behind another window. Assumes Terminal.app, since this
+# targets fresh macOS installs where that's the default (and the .command
+# launcher opens in it).
+focus_terminal() {
+  osascript -e 'tell application "Terminal" to activate' 2>/dev/null || true
+}
+
 # ---------------------------------------------------------------------------
 # prompt_step — guided-step dialog helper for Phase B.
 #
@@ -183,6 +192,9 @@ APPLESCRIPT
     return
   fi
 
+  # Bring Terminal forward so the download progress (and any auth prompt) is
+  # visible — a prior step's "Open" may have left it behind another window.
+  focus_terminal
   echo "Attempting to install ${app_name} (mas id ${app_id})..."
   if mas install "${app_id}"; then
     osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
@@ -748,8 +760,8 @@ if [ -d "/Applications/Keyboard Maestro.app" ]; then
     "/Applications/Keyboard Maestro.app"
 
   prompt_step "Keyboard Maestro — Accessibility Permission" \
-    "Grant Accessibility permission to both Keyboard Maestro and Keyboard Maestro Engine (two separate entries in the list). Click Open for the Accessibility settings pane." \
-    "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+    "Grant Accessibility permission to both Keyboard Maestro and Keyboard Maestro Engine (two separate entries in the list). Click Open for the Privacy & Security settings pane, then choose Accessibility from the list." \
+    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
   prompt_step "Keyboard Maestro — Input Monitoring Permission" \
     "Grant Keyboard Maestro Engine Input Monitoring permission. Click Open for the Privacy & Security settings pane, then choose Input Monitoring from the list." \
