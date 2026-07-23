@@ -11,7 +11,6 @@
 # brew "wget"
 brew "defaultbrowser"  # CLI tool to set the default browser
 brew "jq"              # used by fresh-install.sh to patch Brave's prefs JSON
-brew "mas"             # Mac App Store CLI — used by fresh-install.sh for Logic Pro / Final Cut Pro
 
 # --- Casks (GUI apps) ---
 cask "brave-browser"
@@ -24,6 +23,3 @@ cask "iina"
 cask "scroll-reverser"  # needs Accessibility + Input Monitoring permission, see SETUP-LOG.md
 # cask "rectangle"
 # cask "iterm2"
-
-# --- Mac App Store apps (requires `mas` cask above + signed into App Store) ---
-# mas "Xcode", id: 497799835

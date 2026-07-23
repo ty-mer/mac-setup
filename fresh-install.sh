@@ -10,19 +10,21 @@
 # The two are interleaved on purpose, to overlap your manual time — and one
 # long download with another — instead of idling:
 #   1. Instant local tweaks (Dock, Tips).
-#   2. Kick off the Xcode Command Line Tools install — but don't wait.
-#   3. WHILE it downloads: apply macOS defaults and walk through the System
-#      Settings toggles (none of this needs the tools or Homebrew).
+#   2. Kick off the Xcode Command Line Tools install — but don't wait. Also
+#      kick off the App Store sign-in + Logic Pro/Final Cut Pro "Get" clicks
+#      here — these are the biggest downloads in the whole script (~10GB
+#      combined), so starting them this early gives them the most possible
+#      time to overlap with everything else.
+#   3. WHILE the tools download: apply macOS defaults and walk through the
+#      System Settings toggles (none of this needs the tools or Homebrew).
 #   4. Barrier — wait for the Command Line Tools to finish.
-#   5. Homebrew, then mas specifically (it's tiny) so the Logic Pro/Final Cut
-#      Pro background downloads can start right away — overlapping with the
-#      rest of the Brewfile's much larger casks instead of running after them.
-#   6. The rest of the Brewfile, and each app's automated config.
-#   7. Per-app guided sign-ins and permission grants (needs the apps
-#      installed). Collects the Logic Pro/Final Cut Pro results at the end.
+#   5. Homebrew, then the rest of the Brewfile, and each app's automated
+#      config — all overlapping with the still-downloading App Store apps.
+#   6. Per-app guided sign-ins and permission grants (needs the apps
+#      installed).
 #
 # When adding steps later: automated ones with no download dependency can join
-# step 3; anything needing Homebrew-installed apps goes in step 6/7.
+# step 3; anything needing Homebrew-installed apps goes in step 6.
 #
 # Usage: ./fresh-install.sh
 
@@ -92,7 +94,7 @@ set_string() {
 }
 
 # focus_terminal — bring Terminal back to the front. Used before Terminal-side
-# output/prompts (e.g. a mas install's download progress) that a preceding GUI
+# output/prompts (e.g. Homebrew's sudo password prompt) that a preceding GUI
 # step may have pushed behind another window. Assumes Terminal.app, since this
 # targets fresh macOS installs where that's the default (and the .command
 # launcher opens in it).
@@ -164,102 +166,6 @@ prompt_step() {
   echo "$title" >> "$PHASE_B_STATE_FILE"
 }
 
-# ---------------------------------------------------------------------------
-# prompt_masapp_step — confirm-then-attempt installer for paid Mac App Store
-# apps (Logic Pro, Final Cut Pro).
-#
-#   prompt_masapp_step "Title" "App Name" <mas-id> "macappstore://..." "~6GB"
-#
-# `mas` has no way to check whether an app is purchased without attempting
-# the actual install — it fails fast (no download) if you don't own it, but
-# starts the full download immediately if you do. So this always asks first,
-# with three choices:
-#   "Install"  — attempts `mas install` right then (and shows a follow-up
-#                Done-only dialog reporting success or failure).
-#   "Not Now"  — does nothing this run; the step is offered again next run.
-#   "Never"    — records the step as done so it's never offered again, for an
-#                app you don't own or don't want.
-#
-# Skips the dialog entirely if already marked done in $PHASE_B_STATE_FILE.
-# Only a genuine successful `mas install` OR an explicit "Never" marks it done;
-# "Not Now" and a failed install both leave it unmarked (unlike prompt_step,
-# `mas list` can't be trusted to check real installed state — see the comment
-# on $PHASE_B_STATE_FILE's definition).
-#
-# "Install" starts `mas install` in the BACKGROUND rather than waiting right
-# there — these are multi-GB downloads, and running them in the foreground
-# would block every other Phase B step behind them. Safe to background: mas
-# needs no terminal input, and any App Store auth confirmation is its own
-# native GUI dialog, not a stdin prompt. Each pending install is recorded in
-# MASAPP_PENDING; call wait_for_masapp_installs once, after every other Phase B
-# step, to collect the results and show the deferred completion/failure dialog.
-# ---------------------------------------------------------------------------
-MASAPP_PENDING=()
-
-prompt_masapp_step() {
-  local title="$1" app_name="$2" app_id="$3" store_url="$4" size_hint="$5"
-  local esc_title="${title//\"/\\\"}"
-
-  if grep -qxF "$title" "$PHASE_B_STATE_FILE" 2>/dev/null; then
-    echo "  (already done: ${title})"
-    return
-  fi
-
-  local ask_message="Install ${app_name}? Downloads ~${size_hint} if it's on your Apple ID, or fails right away if not. Sign into the App Store first."$'\n\n•  Install — download it now in the background\n•  Not Now — ask again next run\n•  Never — stop asking'
-  local esc_ask="${ask_message//\"/\\\"}"
-
-  local button
-  button="$(osascript <<APPLESCRIPT
-display dialog "${esc_ask}" with title "${esc_title}" buttons {"Never", "Not Now", "Install"} default button "Not Now"
-button returned of result
-APPLESCRIPT
-)"
-  case "$button" in
-    Install) ;;  # fall through to starting the background install below
-    Never)
-      echo "$title" >> "$PHASE_B_STATE_FILE"
-      return
-      ;;
-    *)  # "Not Now" — leave unmarked so it's offered again next run
-      return
-      ;;
-  esac
-
-  focus_terminal
-  echo "Starting ${app_name} install in the background (mas id ${app_id}) —"
-  echo "continuing with the remaining steps while it downloads."
-  ( mas install "${app_id}" ) &
-  MASAPP_PENDING+=("${title}|${app_name}|${store_url}|$!")
-}
-
-# wait_for_masapp_installs — call once, after every other Phase B step, to
-# collect results from any background installs prompt_masapp_step started.
-wait_for_masapp_installs() {
-  if [ ${#MASAPP_PENDING[@]} -eq 0 ]; then
-    return
-  fi
-  echo ""
-  echo "--- Finishing App Store installs ---"
-  local entry title app_name store_url pid esc_title
-  for entry in "${MASAPP_PENDING[@]}"; do
-    IFS='|' read -r title app_name store_url pid <<< "$entry"
-    esc_title="${title//\"/\\\"}"
-    focus_terminal
-    echo "Waiting for ${app_name} to finish installing..."
-    if wait "$pid"; then
-      osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
-      echo "$title" >> "$PHASE_B_STATE_FILE"
-    else
-      # Use show_step_dialog, not prompt_step: this contingent failure notice
-      # must never be recorded as done, or a later retry that fails again
-      # would silently suppress it.
-      show_step_dialog "${title} — Not Installed" \
-        "Opens ${app_name} in the App Store."$'\n\nInstall it there — if it won\'t, check that it\'s on this Apple ID and that you\'re signed in.' \
-        "${store_url}"
-    fi
-  done
-}
-
 # =============================================================================
 # Setup begins. The run is ordered to overlap your manual time with the long
 # Command Line Tools download (see the header comment): instant local tweaks,
@@ -318,6 +224,30 @@ if ! xcode-select -p &>/dev/null; then
   xcode-select --install 2>/dev/null || true
   CLT_INSTALLING=true
 fi
+
+# --- App Store: Sign in, then click Get on Logic Pro / Final Cut Pro ---
+# Kicked off here, before Homebrew even exists, because these are the two
+# biggest downloads in the whole script (~6GB and ~4GB) — starting them this
+# early gives them the entire rest of the script (System Settings walk-
+# through, Homebrew, Brewfile, per-app sign-ins) to finish in the background.
+# No `mas` involved (that would mean waiting for Homebrew first): these just
+# open the App Store to each app's page via its macappstore:// URL. That
+# means no automated success/fail detection or background PID to wait on —
+# same trade-off as the other guided steps, click Open, do the thing, click
+# Done.
+echo ""
+echo "--- App Store ---"
+prompt_step "App Store — Sign In" \
+  $'Opens the App Store.\n\nSign in with your Apple ID if prompted.' \
+  "/System/Applications/App Store.app"
+
+prompt_step "App Store — Logic Pro" \
+  $'Opens Logic Pro in the App Store.\n\nClick Get/Buy to start the ~6GB download in the background, then Done here — no need to wait for it.' \
+  "macappstore://apps.apple.com/app/id634148309"
+
+prompt_step "App Store — Final Cut Pro" \
+  $'Opens Final Cut Pro in the App Store.\n\nClick Get/Buy to start the ~4GB download in the background, then Done here — no need to wait for it.' \
+  "macappstore://apps.apple.com/app/id424389933"
 
 echo ""
 if [ "$CLT_INSTALLING" = true ]; then
@@ -443,35 +373,6 @@ if ! grep -q 'brew shellenv' "$HOME/.zprofile" 2>/dev/null; then
   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
 fi
 check ".zprofile has brew shellenv" grep -q 'brew shellenv' "$HOME/.zprofile"
-
-# Install mas specifically first (it's tiny) so the Logic Pro/Final Cut Pro
-# background downloads below can start before the Brewfile's much larger casks
-# even begin — the two overlap instead of running one after the other. mas is
-# still declared in the Brewfile too; brew bundle just sees it already
-# installed and skips it.
-if ! command -v mas &>/dev/null; then
-  echo "Installing mas (Mac App Store CLI)..."
-  brew install mas || true
-fi
-check "mas installed" command -v mas
-
-# --- App Store ---
-# Kicked off here (before the rest of the Brewfile installs) specifically so
-# these background downloads (see prompt_masapp_step) overlap with brew
-# bundle's much larger casks instead of running after them.
-# wait_for_masapp_installs collects the results once, after every Phase B
-# guided step.
-if command -v mas &>/dev/null; then
-  prompt_step "App Store — Sign In" \
-    $'Opens the App Store.\n\nSign in with your Apple ID if prompted.' \
-    "/System/Applications/App Store.app"
-
-  prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
-    "macappstore://apps.apple.com/app/id634148309" "6GB"
-
-  prompt_masapp_step "App Store — Final Cut Pro" "Final Cut Pro" "424389933" \
-    "macappstore://apps.apple.com/app/id424389933" "4GB"
-fi
 
 # A5. Packages from Brewfile
 echo "Installing packages from Brewfile..."
@@ -891,10 +792,11 @@ fi
 # App sign-ins & permissions — guided manual steps, one at a time, grouped by
 # app. Each is a dialog with Open (jump to the right place) and Done (advance).
 # These come last because they need the apps Homebrew just installed. (The
-# App Store group is the exception — it already ran back in Phase A, right
-# after mas installed, so its downloads overlap with the rest of the
-# Brewfile.) The System Settings walk-through happened earlier still, during
-# the Command Line Tools download.
+# App Store group is the exception — it already ran back at the very start,
+# right alongside the Command Line Tools kickoff, so the Logic Pro/Final Cut
+# Pro downloads have the whole rest of the script to finish in the
+# background. The System Settings walk-through happened earlier still, during
+# the Command Line Tools download.)
 # =============================================================================
 echo ""
 echo "--- App sign-ins and permissions ---"
@@ -979,10 +881,6 @@ if [ -d "/Applications/Keyboard Maestro.app" ]; then
     $'Opens Keyboard Maestro.\n\n1. Open Preferences (the first Settings page).\n2. Turn on Start Syncing Macros.\n3. Click Open Existing….\n4. Select the file: iCloud Drive/Google Drive/Keyboard Maestro Macros.kmsync.' \
     "/Applications/Keyboard Maestro.app"
 fi
-
-# Collect results from the background Logic Pro/Final Cut Pro installs
-# started at the top of this section, now that every other guided step is done.
-wait_for_masapp_installs
 
 # ---------------------------------------------------------------------------
 echo ""
