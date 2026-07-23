@@ -254,6 +254,22 @@ check "Xcode Command Line Tools installed" xcode-select -p
 # A4. Homebrew
 if ! command -v brew &>/dev/null; then
   echo "Installing Homebrew..."
+  # We run the installer with NONINTERACTIVE=1 (so it doesn't hang on its own
+  # "press RETURN to continue" prompt). A side effect: in that mode Homebrew
+  # verifies sudo access with `sudo -n` (non-interactive), which fails on a
+  # fresh Mac that has no cached sudo credential yet — and Homebrew reports
+  # that failure as a misleading "needs to be an Administrator" error even for
+  # admin accounts. Prime the credential cache first so that check passes —
+  # but only if it isn't already primed (`sudo -n -v` succeeds silently when a
+  # valid cached credential exists), so a quick re-run doesn't re-prompt.
+  if ! sudo -n -v 2>/dev/null; then
+    echo "Homebrew needs administrator access. Enter your login password if prompted."
+    if ! sudo -v; then
+      echo "Could not obtain administrator access — this account must be an" >&2
+      echo "Administrator to install Homebrew. Fix that, then re-run." >&2
+      exit 1
+    fi
+  fi
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
