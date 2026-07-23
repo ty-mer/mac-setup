@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 # fresh-install.sh — orchestrator for setting up a clean macOS install.
 #
-# Structure:
-#   PHASE A — fully automated. No prompts, no app-switching. Runs top to bottom.
-#   PHASE B — guided manual steps. Each step is a dialog with "Open" (jumps to the
-#             relevant app/pane, can be clicked more than once) and "Done" (advances
-#             to the next step). Steps are grouped by app, then by section within
-#             that app, so you never have to bounce back and forth between the same
-#             app twice. When adding new steps later: fully-automated ones go in
-#             Phase A; anything needing a click/login/permission grant goes in
-#             Phase B, filed under the right app group (respecting any real
-#             order-of-operations dependency), not just appended at the end.
+# Two kinds of step:
+#   AUTOMATED — no prompts, no app-switching (the A1..A9 steps).
+#   GUIDED    — a dialog with "Open" (jumps to the relevant app/pane, can be
+#               clicked more than once) and "Done" (advances). Grouped by app/
+#               pane so you never bounce between the same place twice.
+#
+# The two are interleaved on purpose, to overlap your manual time with the long
+# downloads instead of idling:
+#   1. Instant local tweaks (Dock, Tips).
+#   2. Kick off the Xcode Command Line Tools install — but don't wait.
+#   3. WHILE it downloads: apply macOS defaults and walk through the System
+#      Settings toggles (none of this needs the tools or Homebrew).
+#   4. Barrier — wait for the Command Line Tools to finish.
+#   5. Homebrew, the Brewfile, and each app's automated config.
+#   6. Per-app guided sign-ins and permission grants (needs the apps installed).
+#
+# When adding steps later: automated ones with no download dependency can join
+# step 3; anything needing Homebrew-installed apps goes in step 5/6.
 #
 # Usage: ./fresh-install.sh
 
@@ -221,10 +229,14 @@ APPLESCRIPT
 }
 
 # =============================================================================
-# PHASE A — fully automated
+# Setup begins. The run is ordered to overlap your manual time with the long
+# Command Line Tools download (see the header comment): instant local tweaks,
+# then kick off that install and do all the no-download work (macOS defaults +
+# the System Settings walk-through) while it runs, then Homebrew + apps + the
+# per-app sign-ins once the tools and apps are in place.
 # =============================================================================
 echo ""
-echo "--- Phase A: automated setup ---"
+echo "--- Local setup ---"
 
 # A1. Clear Dock and hide desktop widgets
 echo "Clearing Dock and hiding desktop widgets..."
@@ -260,19 +272,111 @@ launchctl disable "gui/$(id -u)/com.apple.tipsd" 2>/dev/null || true
 check "Tips daemon not running" bash -c '! launchctl list 2>/dev/null | grep -q com.apple.tipsd'
 # To reverse: launchctl enable "gui/$(id -u)/com.apple.tipsd"
 
-# A3. Xcode Command Line Tools (needed for Homebrew, git, etc.)
+# --- Kick off the Xcode Command Line Tools install, but don't wait yet ---
+# The tools are needed for Homebrew, but nothing between here and the Homebrew
+# barrier below needs them — so we start the install now and do the built-in
+# macOS setup (defaults + the System Settings walk-through) while it downloads,
+# instead of idling on a progress bar. An already-set-up machine skips straight
+# past the barrier.
+CLT_INSTALLING=false
 if ! xcode-select -p &>/dev/null; then
-  echo "Installing Xcode Command Line Tools..."
-  xcode-select --install
-  echo "Waiting for the Xcode Command Line Tools install to finish (a separate GUI"
-  echo "installer window should have opened) — this script will keep polling and"
-  echo "continue automatically once it's done. No need to re-run anything."
+  echo "Starting the Xcode Command Line Tools install..."
+  echo "A GUI installer will open — click Install. No need to wait for it; keep"
+  echo "going with the steps below and it'll finish while you do them."
+  xcode-select --install 2>/dev/null || true
+  CLT_INSTALLING=true
+fi
+
+echo ""
+if [ "$CLT_INSTALLING" = true ]; then
+  echo "--- System preferences (while the Command Line Tools install) ---"
+else
+  echo "--- System preferences ---"
+fi
+
+# macOS system defaults — all built-in tools (defaults/pmset/PlistBuddy/nvram),
+# no Homebrew needed, so this runs during the download. Executed as a subprocess
+# under this script's set -e; guard so an unexpected non-zero exit can't abort
+# the run. It prints its own per-setting checks.
+echo "Applying macOS defaults..."
+focus_terminal
+bash "${DIR}/macos-defaults.sh" || true
+
+# --- System Settings (everything with no scriptable equivalent, grouped by pane) ---
+# These are guided dialogs: click Open to jump to the pane, make the changes,
+# then Done to advance. Do them now while the Command Line Tools finish
+# installing in the background.
+echo "Next: a series of System Settings dialogs. Click Open on each to jump to"
+echo "the pane, make the changes, then Done to move on."
+
+prompt_step "System Settings — Battery" \
+  $'Click Open for Battery settings, then set Energy Mode:\n\n•  On Battery — Automatic\n•  On Power Adapter — High Power' \
+  "x-apple.systempreferences:com.apple.Battery-Settings.extension"
+
+prompt_step "System Settings — Accessibility (Display)" \
+  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Transparency — On\n•  Show window title icons — On' \
+  "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+
+prompt_step "System Settings — Accessibility (Motion)" \
+  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Motion — On\n•  Auto-play animated images — Off' \
+  "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
+
+prompt_step "System Settings — Appearance" \
+  "Click Open for Appearance settings, then turn off Tint window background with wallpaper color." \
+  "x-apple.systempreferences:com.apple.Appearance-Settings.extension"
+
+prompt_step "System Settings — Menu Bar" \
+  "Click Open for Control Center settings, then set Show menu bar background — On." \
+  "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension"
+
+prompt_step "System Settings — Desktop & Dock" \
+  "Click Open for Desktop & Dock settings, then turn off: Drag windows to top of screen to enter Mission Control." \
+  "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
+
+prompt_step "System Settings — Spotlight" \
+  $'Click Open for Spotlight settings, then set:\n\n•  Show Related Content — Off\n•  Help Apple Improve Search — Off\n•  Results from Apps — only Calculator, Dictionary, System Settings on\n•  Results from System — only Apps on' \
+  "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
+
+prompt_step "System Settings — Wallpaper" \
+  $'Click Open for Wallpaper settings, then set:\n\n•  Dynamic Wallpaper — Macintosh, set to Dark\n•  Color — Dark Gray\n•  Clock — show large clock on Screen Saver and Lock Screen' \
+  "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension"
+
+prompt_step "System Settings — Notifications" \
+  $'Click Open for Notifications settings, then set:\n\n•  Show notifications when locked — Off\n•  Turn off every app except Messages\n•  In Messages — Desktop only, Alert Style Persistent, play sound Off, everything else off' \
+  "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+
+prompt_step "System Settings — Lock Screen" \
+  "Click Open for Lock Screen settings, then set Show user name and photo — Off." \
+  "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
+
+prompt_step "System Settings — Privacy & Security" \
+  "Click Open for Privacy & Security settings, then under Wired Accessories set Allow accessories to connect — Automatically when unlocked." \
+  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+
+prompt_step "System Settings — Game Center" \
+  "Click Open for Game Center settings, then sign out." \
+  "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
+
+prompt_step "System Settings — Keyboard" \
+  $'Click Open for Keyboard settings, then click "Keyboard Shortcuts…" and choose Modifier Keys — the last item in the list, after Function Keys. Set the Caps Lock Key to No Action.\n\nUse the keyboard selector at the top to repeat this for each keyboard you use — the built-in one and any external keyboards.' \
+  "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
+
+prompt_step "System Settings — Trackpad" \
+  "Click Open for Trackpad settings, then turn off Look up & data detectors." \
+  "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"
+
+# --- Barrier: Homebrew needs the Command Line Tools ---
+if [ "$CLT_INSTALLING" = true ]; then
+  echo ""
+  echo "Making sure the Command Line Tools install has finished..."
   until xcode-select -p &>/dev/null; do
     sleep 5
   done
-  echo "Xcode Command Line Tools installed."
 fi
 check "Xcode Command Line Tools installed" xcode-select -p
+
+echo ""
+echo "--- Installing Homebrew and apps ---"
 
 # A4. Homebrew
 if ! command -v brew &>/dev/null; then
@@ -315,14 +419,7 @@ echo "Installing packages from Brewfile..."
 brew bundle --file="${DIR}/Brewfile" || true
 check "All Brewfile packages installed" brew bundle check --file="${DIR}/Brewfile"
 
-# A6. macOS system defaults
-echo "Applying macOS defaults..."
-# Runs as a subprocess under this script's set -e; guard so an unexpected
-# non-zero exit inside it can't abort the rest of Phase A. It prints its own
-# per-setting ✓/✗ so failures are still visible.
-bash "${DIR}/macos-defaults.sh" || true
-
-# A7. Brave — everything scriptable with zero clicks (policies, prefs, headless
+# A6. Brave — everything scriptable with zero clicks (policies, prefs, headless
 # profile init). Setting Brave as default browser and opening it for sign-in
 # both require you to look at the screen, so those are Phase B steps instead.
 if [ -d "/Applications/Brave Browser.app" ]; then
@@ -461,7 +558,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
   fi
 fi
 
-# A8. Clipy preferences — replicated from this machine's config on 2026-07-22
+# A7. Clipy preferences — replicated from this machine's config on 2026-07-22
 # (`defaults read com.clipy-app.Clipy`). All plain prefs writes, no clicking.
 if [ -d "/Applications/Clipy.app" ]; then
   echo "Configuring Clipy (automated preferences)..."
@@ -504,16 +601,26 @@ if [ -d "/Applications/Clipy.app" ]; then
   check "Clipy Clear History shortcut cleared" bash -c '! defaults read com.clipy-app.Clipy kCPYClearHistoryKeyCombo &>/dev/null'
 fi
 
-# A9. Scroll Reverser preferences — app-owned prefs, not TCC-protected, so
+# A8. Scroll Reverser preferences — app-owned prefs, not TCC-protected, so
 # these are safe to set before the Accessibility/Input Monitoring permission
 # grant (Phase B) — they just won't do anything until that's granted.
 if [ -d "/Applications/Scroll Reverser.app" ]; then
   echo "Configuring Scroll Reverser (automated preferences)..."
+  # Quit it first if it's running (e.g. a re-run where it's already a login
+  # item) and wait for it to fully exit: a live instance holds its settings in
+  # memory and rewrites the plist on quit, which would clobber what we set
+  # here. Then flush cfprefsd so the on-disk values are authoritative when it
+  # next launches.
+  if pgrep -x "Scroll Reverser" >/dev/null 2>&1; then
+    killall "Scroll Reverser" 2>/dev/null || true
+    sleep 1
+  fi
   set_bool "Scroll Reverser enabled" com.pilotmoon.scroll-reverser InvertScrollingOn true
   set_bool "Scroll Reverser: Reverse Trackpad off" com.pilotmoon.scroll-reverser ReverseTrackpad false
+  killall cfprefsd 2>/dev/null || true
 fi
 
-# A10. VS Code settings and baseline extensions — settings.json copied from
+# A9. VS Code settings and baseline extensions — settings.json copied from
 # this machine's config on 2026-07-23, with machine/project-specific entries
 # dropped (a Flutter SDK path, an iTerm reference — iTerm isn't in the
 # Brewfile — and a Copilot autocompletion setting, deliberately not carried
@@ -694,14 +801,15 @@ EOF
   done
 fi
 
-echo ""
-echo "Phase A complete: apps installed, all scriptable preferences applied."
-
 # =============================================================================
-# PHASE B — guided manual steps (one at a time, grouped by app)
+# App sign-ins & permissions — guided manual steps, one at a time, grouped by
+# app. Each is a dialog with Open (jump to the right place) and Done (advance).
+# These come last because they need the apps Homebrew just installed. The
+# System Settings walk-through already happened earlier, during the Command
+# Line Tools download.
 # =============================================================================
 echo ""
-echo "--- Phase B: guided manual steps ---"
+echo "--- App sign-ins and permissions ---"
 echo "A dialog will appear for each step. Click Open to jump to the right place,"
 echo "then Done when you've finished that step, to move to the next one."
 
@@ -796,65 +904,7 @@ if command -v mas &>/dev/null; then
     "macappstore://apps.apple.com/app/id424389933" "4GB"
 fi
 
-# --- System Settings (everything with no scriptable equivalent, grouped by pane) ---
-
-prompt_step "System Settings — Battery" \
-  $'Click Open for Battery settings, then set Energy Mode:\n\n•  On Battery — Automatic\n•  On Power Adapter — High Power' \
-  "x-apple.systempreferences:com.apple.Battery-Settings.extension"
-
-prompt_step "System Settings — Accessibility (Display)" \
-  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Transparency — On\n•  Show window title icons — On' \
-  "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
-
-prompt_step "System Settings — Accessibility (Motion)" \
-  $'Click Open for Accessibility settings, then set:\n\n•  Reduce Motion — On\n•  Auto-play animated images — Off' \
-  "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
-
-prompt_step "System Settings — Appearance" \
-  "Click Open for Appearance settings, then turn off Tint window background with wallpaper color." \
-  "x-apple.systempreferences:com.apple.Appearance-Settings.extension"
-
-prompt_step "System Settings — Menu Bar" \
-  "Click Open for Control Center settings, then set Show menu bar background — On." \
-  "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension"
-
-prompt_step "System Settings — Desktop & Dock" \
-  "Click Open for Desktop & Dock settings, then turn off: Drag windows to top of screen to enter Mission Control." \
-  "x-apple.systempreferences:com.apple.Desktop-Settings.extension"
-
-prompt_step "System Settings — Spotlight" \
-  $'Click Open for Spotlight settings, then set:\n\n•  Show Related Content — Off\n•  Help Apple Improve Search — Off\n•  Results from Apps — only Calculator, Dictionary, System Settings on\n•  Results from System — only Apps on' \
-  "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
-
-prompt_step "System Settings — Wallpaper" \
-  $'Click Open for Wallpaper settings, then set:\n\n•  Dynamic Wallpaper — Macintosh, set to Dark\n•  Color — Dark Gray\n•  Clock — show large clock on Screen Saver and Lock Screen' \
-  "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension"
-
-prompt_step "System Settings — Notifications" \
-  $'Click Open for Notifications settings, then set:\n\n•  Show notifications when locked — Off\n•  Turn off every app except Messages\n•  In Messages — Desktop only, Alert Style Persistent, play sound Off, everything else off' \
-  "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
-
-prompt_step "System Settings — Lock Screen" \
-  "Click Open for Lock Screen settings, then set Show user name and photo — Off." \
-  "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
-
-prompt_step "System Settings — Privacy & Security" \
-  "Click Open for Privacy & Security settings, then under Wired Accessories set Allow accessories to connect — Automatically when unlocked." \
-  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
-
-prompt_step "System Settings — Game Center" \
-  "Click Open for Game Center settings, then sign out." \
-  "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
-
-prompt_step "System Settings — Keyboard" \
-  $'Click Open for Keyboard settings, then click "Keyboard Shortcuts…" and choose Modifier Keys — the last item in the list, after Function Keys. Set the Caps Lock Key to No Action.\n\nUse the keyboard selector at the top to repeat this for each keyboard you use — the built-in one and any external keyboards.' \
-  "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
-
-prompt_step "System Settings — Trackpad" \
-  "Click Open for Trackpad settings, then turn off Look up & data detectors." \
-  "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"
-
 # ---------------------------------------------------------------------------
 echo ""
-echo "Phase B complete. Anything outside this script's scope (licensed software,"
+echo "Setup complete. Anything outside this script's scope (licensed software,"
 echo "dotfiles, dev environment, etc.) is still on you."
