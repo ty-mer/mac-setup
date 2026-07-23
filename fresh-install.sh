@@ -60,6 +60,44 @@ APPLESCRIPT
   fi
 }
 
+# ---------------------------------------------------------------------------
+# prompt_masapp_step — confirm-then-attempt installer for paid Mac App Store
+# apps (Logic Pro, Final Cut Pro).
+#
+#   prompt_masapp_step "Title" "App Name" <mas-id> "macappstore://..." "~6GB"
+#
+# `mas` has no way to check whether an app is purchased without attempting
+# the actual install — it fails fast (no download) if you don't own it, but
+# starts the full download immediately if you do. So this always asks first:
+# "Install" attempts `mas install` right then (and shows a follow-up Done-only
+# dialog reporting success or failure); "Skip" does nothing and moves on.
+# ---------------------------------------------------------------------------
+prompt_masapp_step() {
+  local title="$1" app_name="$2" app_id="$3" store_url="$4" size_hint="$5"
+  local esc_title="${title//\"/\\\"}"
+  local ask_message="Install ${app_name} if it's purchased on this Apple ID? (~${size_hint} download if you own it — fails instantly if not. Make sure you're signed into the App Store first.)"
+  local esc_ask="${ask_message//\"/\\\"}"
+
+  local button
+  button="$(osascript <<APPLESCRIPT
+display dialog "${esc_ask}" with title "${esc_title}" buttons {"Skip", "Install"} default button "Skip"
+button returned of result
+APPLESCRIPT
+)"
+  if [ "$button" != "Install" ]; then
+    return
+  fi
+
+  echo "Attempting to install ${app_name} (mas id ${app_id})..."
+  if mas install "${app_id}"; then
+    osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
+  else
+    prompt_step "${title} — Not Installed" \
+      "Couldn't install ${app_name} — you may not own it on this Apple ID, might not be signed in, or something else went wrong. Click Open to check the App Store page yourself." \
+      "${store_url}"
+  fi
+}
+
 # =============================================================================
 # PHASE A — fully automated
 # =============================================================================
@@ -281,6 +319,19 @@ if [ -d "/Applications/Keyboard Maestro.app" ]; then
   prompt_step "Keyboard Maestro — Macro Sync" \
     "In Keyboard Maestro's preferences, go to the Syncing tab, choose \"Start Syncing Macros,\" then \"Open Existing Synchronized Macros,\" and select: ~/Library/Mobile Documents/com~apple~CloudDocs/Google Drive/Keyboard Maestro Macros.kmsync. (Not scripted — destructive/versioned, no safe preference key.) Click Open to launch Keyboard Maestro." \
     "/Applications/Keyboard Maestro.app"
+fi
+
+# --- App Store ---
+if command -v mas &>/dev/null; then
+  prompt_step "App Store — Sign In" \
+    "Sign into the App Store with your Apple ID — needed before either install below will work. Click Open to launch the App Store." \
+    "macappstore://"
+
+  prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
+    "macappstore://apps.apple.com/app/id634148309" "6GB"
+
+  prompt_masapp_step "App Store — Final Cut Pro" "Final Cut Pro" "424389933" \
+    "macappstore://apps.apple.com/app/id424389933" "4GB"
 fi
 
 # --- System Settings (everything with no scriptable equivalent, grouped by pane) ---
