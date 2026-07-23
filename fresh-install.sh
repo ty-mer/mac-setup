@@ -181,7 +181,17 @@ prompt_step() {
 # "Not Now" and a failed install both leave it unmarked (unlike prompt_step,
 # `mas list` can't be trusted to check real installed state — see the comment
 # on $PHASE_B_STATE_FILE's definition).
+#
+# "Install" starts `mas install` in the BACKGROUND rather than waiting right
+# there — these are multi-GB downloads, and running them in the foreground
+# would block every other Phase B step behind them. Safe to background: mas
+# needs no terminal input, and any App Store auth confirmation is its own
+# native GUI dialog, not a stdin prompt. Each pending install is recorded in
+# MASAPP_PENDING; call wait_for_masapp_installs once, after every other Phase B
+# step, to collect the results and show the deferred completion/failure dialog.
 # ---------------------------------------------------------------------------
+MASAPP_PENDING=()
+
 prompt_masapp_step() {
   local title="$1" app_name="$2" app_id="$3" store_url="$4" size_hint="$5"
   local esc_title="${title//\"/\\\"}"
@@ -191,7 +201,7 @@ prompt_masapp_step() {
     return
   fi
 
-  local ask_message="Install ${app_name}? Downloads ~${size_hint} if it's on your Apple ID, or fails right away if not. Sign into the App Store first."$'\n\n•  Install — download it now\n•  Not Now — ask again next run\n•  Never — stop asking'
+  local ask_message="Install ${app_name}? Downloads ~${size_hint} if it's on your Apple ID, or fails right away if not. Sign into the App Store first."$'\n\n•  Install — download it now in the background\n•  Not Now — ask again next run\n•  Never — stop asking'
   local esc_ask="${ask_message//\"/\\\"}"
 
   local button
@@ -201,7 +211,7 @@ button returned of result
 APPLESCRIPT
 )"
   case "$button" in
-    Install) ;;  # fall through to the install attempt below
+    Install) ;;  # fall through to starting the background install below
     Never)
       echo "$title" >> "$PHASE_B_STATE_FILE"
       return
@@ -211,21 +221,39 @@ APPLESCRIPT
       ;;
   esac
 
-  # Bring Terminal forward so the download progress (and any auth prompt) is
-  # visible — a prior step's "Open" may have left it behind another window.
   focus_terminal
-  echo "Attempting to install ${app_name} (mas id ${app_id})..."
-  if mas install "${app_id}"; then
-    osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
-    echo "$title" >> "$PHASE_B_STATE_FILE"
-  else
-    # Use show_step_dialog, not prompt_step: this contingent failure notice
-    # must never be recorded as done, or a later retry that fails again would
-    # silently suppress it.
-    show_step_dialog "${title} — Not Installed" \
-      "Opens ${app_name} in the App Store. Install it there — if it won't, check that it's on this Apple ID and that you're signed in." \
-      "${store_url}"
+  echo "Starting ${app_name} install in the background (mas id ${app_id}) —"
+  echo "continuing with the remaining steps while it downloads."
+  ( mas install "${app_id}" ) &
+  MASAPP_PENDING+=("${title}|${app_name}|${store_url}|$!")
+}
+
+# wait_for_masapp_installs — call once, after every other Phase B step, to
+# collect results from any background installs prompt_masapp_step started.
+wait_for_masapp_installs() {
+  if [ ${#MASAPP_PENDING[@]} -eq 0 ]; then
+    return
   fi
+  echo ""
+  echo "--- Finishing App Store installs ---"
+  local entry title app_name store_url pid esc_title
+  for entry in "${MASAPP_PENDING[@]}"; do
+    IFS='|' read -r title app_name store_url pid <<< "$entry"
+    esc_title="${title//\"/\\\"}"
+    focus_terminal
+    echo "Waiting for ${app_name} to finish installing..."
+    if wait "$pid"; then
+      osascript -e "display dialog \"${app_name} installed.\" with title \"${esc_title}\" buttons {\"Done\"} default button \"Done\"" >/dev/null
+      echo "$title" >> "$PHASE_B_STATE_FILE"
+    else
+      # Use show_step_dialog, not prompt_step: this contingent failure notice
+      # must never be recorded as done, or a later retry that fails again
+      # would silently suppress it.
+      show_step_dialog "${title} — Not Installed" \
+        "Opens ${app_name} in the App Store. Install it there — if it won't, check that it's on this Apple ID and that you're signed in." \
+        "${store_url}"
+    fi
+  done
 }
 
 # =============================================================================
@@ -314,11 +342,11 @@ prompt_step "System Settings — Battery" \
   "x-apple.systempreferences:com.apple.Battery-Settings.extension"
 
 prompt_step "System Settings — Accessibility (Display)" \
-  $'Opens Accessibility settings. Set:\n\n•  Reduce Transparency: On\n•  Show window title icons: On' \
+  $'Opens Accessibility settings. Choose Display, then set:\n\n•  Reduce Transparency: On\n•  Show window title icons: On' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Accessibility (Motion)" \
-  $'Opens Accessibility settings. Set:\n\n•  Reduce Motion: On\n•  Auto-play animated images: Off' \
+  $'Opens Accessibility settings. Choose Motion, then set:\n\n•  Reduce Motion: On\n•  Auto-play animated images: Off' \
   "x-apple.systempreferences:com.apple.Accessibility-Settings.extension"
 
 prompt_step "System Settings — Appearance" \
@@ -338,7 +366,7 @@ prompt_step "System Settings — Spotlight" \
   "x-apple.systempreferences:com.apple.Spotlight-Settings.extension"
 
 prompt_step "System Settings — Wallpaper" \
-  $'Opens Wallpaper settings. Set:\n\n•  Dynamic Wallpaper: Macintosh, Dark\n•  Color: Dark Gray\n•  Clock: show large clock on Screen Saver and Lock Screen' \
+  $'Opens Wallpaper settings. Set:\n\n•  Dynamic Wallpaper: Macintosh, Dark\n•  Color: Dark Gray\n\nThen click "Clock Appearance…" and turn on the large clock for Screen Saver and Lock Screen.' \
   "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension"
 
 prompt_step "System Settings — Notifications" \
@@ -350,7 +378,7 @@ prompt_step "System Settings — Lock Screen" \
   "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
 
 prompt_step "System Settings — Privacy & Security" \
-  "Opens Privacy & Security settings. Under Wired Accessories, set Allow accessories to connect to Automatically when unlocked." \
+  "Opens Privacy & Security settings. Under Accessories, set Allow accessories to connect to Automatically when unlocked." \
   "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
 prompt_step "System Settings — Game Center" \
@@ -358,7 +386,7 @@ prompt_step "System Settings — Game Center" \
   "x-apple.systempreferences:com.apple.Game-Center-Settings.extension"
 
 prompt_step "System Settings — Keyboard" \
-  $'Opens Keyboard settings.\n\n1. Click "Keyboard Shortcuts…".\n2. Choose Modifier Keys — last in the list, after Function Keys.\n3. Set Caps Lock Key to No Action.\n4. Repeat for each keyboard using the selector at the top.' \
+  $'Opens Keyboard settings.\n\n1. Click "Keyboard Shortcuts…".\n2. Choose Function Keys, then turn on "Use F1, F2, etc. keys as standard function keys".\n3. Choose Modifier Keys — last in the list, after Function Keys.\n4. Set Caps Lock Key to No Action.\n5. Repeat step 4 for each keyboard using the selector at the top.' \
   "x-apple.systempreferences:com.apple.Keyboard-Settings.extension"
 
 prompt_step "System Settings — Trackpad" \
@@ -816,6 +844,14 @@ EOF
   done
 fi
 
+# A10. Keyboard Maestro preferences — app-owned prefs, not TCC-protected, and
+# (unlike Scroll Reverser's master toggle) not tied to permission state, so
+# this is safe to set once in Phase A with no re-apply needed later.
+if [ -d "/Applications/Keyboard Maestro.app" ]; then
+  echo "Configuring Keyboard Maestro (automated preferences)..."
+  set_bool "Keyboard Maestro Applications Palette hidden" com.stairways.keyboardmaestro.engine ShowApplicationsPalette false
+fi
+
 # =============================================================================
 # App sign-ins & permissions — guided manual steps, one at a time, grouped by
 # app. Each is a dialog with Open (jump to the right place) and Done (advance).
@@ -827,6 +863,24 @@ echo ""
 echo "--- App sign-ins and permissions ---"
 echo "A dialog will appear for each step. Click Open to jump to the right place,"
 echo "then Done when you've finished that step, to move to the next one."
+
+# --- App Store ---
+# Placed first (not last) and its installs run in the background (see
+# prompt_masapp_step) — Logic Pro/Final Cut Pro are large downloads, so
+# starting them now lets them run alongside every dialog below instead of
+# blocking at the end. wait_for_masapp_installs collects the results after
+# everything else.
+if command -v mas &>/dev/null; then
+  prompt_step "App Store — Sign In" \
+    "Opens the App Store. Sign in with your Apple ID." \
+    "/System/Applications/App Store.app"
+
+  prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
+    "macappstore://apps.apple.com/app/id634148309" "6GB"
+
+  prompt_masapp_step "App Store — Final Cut Pro" "Final Cut Pro" "424389933" \
+    "macappstore://apps.apple.com/app/id424389933" "4GB"
+fi
 
 # --- Brave ---
 if [ -d "/Applications/Brave Browser.app" ]; then
@@ -887,8 +941,20 @@ if [ -d "/Applications/Scroll Reverser.app" ]; then
     "/Applications/Scroll Reverser.app"
 
   prompt_step "Scroll Reverser — Input Monitoring" \
-    $'Opens Privacy & Security settings.\n\n1. Choose Input Monitoring.\n2. Turn on Scroll Reverser.' \
+    $'Opens Privacy & Security settings.\n\n1. Choose Input Monitoring.\n2. Turn on Scroll Reverser.\n\nIf it\'s not in the list yet, quit and reopen Scroll Reverser, then check again.' \
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+
+  # Scroll Reverser appears to auto-disable its own "enabled" toggle when it
+  # detects it's missing Accessibility/Input Monitoring permission — which
+  # silently undoes the A8 write from before you'd granted either. Re-apply
+  # now that both are granted, so it sticks.
+  if pgrep -x "Scroll Reverser" >/dev/null 2>&1; then
+    killall "Scroll Reverser" 2>/dev/null || true
+    sleep 1
+  fi
+  set_bool "Scroll Reverser enabled" com.pilotmoon.scroll-reverser InvertScrollingOn true
+  set_bool "Scroll Reverser: Reverse Trackpad off" com.pilotmoon.scroll-reverser ReverseTrackpad false
+  killall cfprefsd 2>/dev/null || true
 fi
 
 # --- Keyboard Maestro ---
@@ -906,22 +972,13 @@ if [ -d "/Applications/Keyboard Maestro.app" ]; then
     "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
 
   prompt_step "Keyboard Maestro — Macro Sync" \
-    $'Opens Keyboard Maestro.\n\n1. Open Preferences and go to the Syncing tab.\n2. Click Start Syncing Macros, then Open Existing Synchronized Macros.\n3. Select the file: iCloud Drive/Google Drive/Keyboard Maestro Macros.kmsync.' \
+    $'Opens Keyboard Maestro.\n\n1. Open Preferences (the first Settings page).\n2. Turn on Start Syncing Macros.\n3. Click Open Existing….\n4. Select the file: iCloud Drive/Google Drive/Keyboard Maestro Macros.kmsync.' \
     "/Applications/Keyboard Maestro.app"
 fi
 
-# --- App Store ---
-if command -v mas &>/dev/null; then
-  prompt_step "App Store — Sign In" \
-    "Opens the App Store. Sign in with your Apple ID." \
-    "macappstore://"
-
-  prompt_masapp_step "App Store — Logic Pro" "Logic Pro" "634148309" \
-    "macappstore://apps.apple.com/app/id634148309" "6GB"
-
-  prompt_masapp_step "App Store — Final Cut Pro" "Final Cut Pro" "424389933" \
-    "macappstore://apps.apple.com/app/id424389933" "4GB"
-fi
+# Collect results from the background Logic Pro/Final Cut Pro installs
+# started at the top of this section, now that every other guided step is done.
+wait_for_masapp_installs
 
 # ---------------------------------------------------------------------------
 echo ""
