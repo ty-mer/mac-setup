@@ -138,8 +138,15 @@ fi
 # A4. Homebrew
 if ! command -v brew &>/dev/null; then
   echo "Installing Homebrew..."
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   eval "$(/opt/homebrew/bin/brew shellenv)"
+
+  # The installer prints shellenv instructions but doesn't act on them — add it
+  # to .zprofile ourselves so brew (and anything it installs) is on PATH in
+  # new shells too, not just for the rest of this script's own process.
+  if ! grep -q 'brew shellenv' "$HOME/.zprofile" 2>/dev/null; then
+    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
+  fi
 fi
 
 # A5. Packages from Brewfile
