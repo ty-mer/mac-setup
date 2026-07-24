@@ -868,7 +868,7 @@ if [ -d "/Applications/Brave Browser.app" ]; then
     "https://kagi.com/signin"
 
   prompt_step "Brave — Gmail" \
-    $'Opens the Gmail sign-in page.\n\nSign in as ty1470@gmail.com.' \
+    $'Opens the Gmail sign-in page.\n\nSign in with your Google account.' \
     "https://accounts.google.com/AccountChooser?service=mail&continue=https://mail.google.com/"
 fi
 
