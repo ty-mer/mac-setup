@@ -271,9 +271,23 @@ bash "${DIR}/macos-defaults.sh" || true
 echo "Next: a series of System Settings dialogs. Click Open on each to jump to"
 echo "the pane, make the changes, then Done to move on."
 
-prompt_step "System Settings — Battery" \
-  $'Opens Battery settings.\n\nSet Energy Mode:\n•  On Battery: Automatic\n•  On Power Adapter: High Power' \
-  "x-apple.systempreferences:com.apple.Battery-Settings.extension"
+# Laptop-only detection, shared below by both the Battery step and the
+# Accessories part of the Privacy & Security step. `pmset -g batt` lists an
+# "InternalBattery" line only when one is actually present — a more reliable
+# signal than guessing from the Mac model name.
+HAS_BATTERY=false
+if pmset -g batt 2>/dev/null | grep -q "InternalBattery"; then
+  HAS_BATTERY=true
+fi
+
+# Battery settings only exist on Macs with a battery — desktops (Mac mini,
+# Mac Studio, Mac Pro, iMac) have no Battery pane at all, so the deep link
+# opens to nothing useful there.
+if [ "$HAS_BATTERY" = true ]; then
+  prompt_step "System Settings — Battery" \
+    $'Opens Battery settings.\n\nSet Energy Mode:\n•  On Battery: Automatic\n•  On Power Adapter: High Power' \
+    "x-apple.systempreferences:com.apple.Battery-Settings.extension"
+fi
 
 prompt_step "System Settings — Accessibility (Display)" \
   $'Opens Accessibility settings.\n\nChoose Display, then set:\n•  Reduce Transparency: On\n•  Show window title icons: On' \
@@ -311,9 +325,19 @@ prompt_step "System Settings — Lock Screen" \
   $'Opens Lock Screen settings.\n\nTurn off Show user name and photo.' \
   "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"
 
-prompt_step "System Settings — Privacy & Security" \
-  $'Opens Privacy & Security settings.\n\nUnder Accessories (near the bottom), set Allow accessories to connect to Automatically when unlocked.' \
-  "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+# "Allow accessories to connect" (Privacy & Security > Accessories) only
+# exists on Apple Silicon LAPTOPS — confirmed via Apple's own support doc and
+# multiple user reports. On a desktop (Mac mini, Mac Studio, Mac Pro, iMac)
+# the pane doesn't exist at all: it's searchable (the metadata entry is still
+# indexed) but empty/unusable when you click through, which is exactly what
+# showed up testing this on an M1 Mac mini. So skip the step entirely on
+# desktops rather than sending you chasing a setting that isn't there.
+# https://support.apple.com/en-us/102282
+if [ "$HAS_BATTERY" = true ]; then
+  prompt_step "System Settings — Privacy & Security" \
+    $'Opens Privacy & Security settings.\n\nUnder Accessories (near the bottom), set Allow accessories to connect to Automatically when unlocked.' \
+    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
+fi
 
 prompt_step "System Settings — Game Center" \
   $'Opens Game Center settings.\n\nSign out.' \
